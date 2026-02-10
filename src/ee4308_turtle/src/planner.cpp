@@ -27,33 +27,27 @@ namespace ee4308::turtle
     // Converts world coordinates to cell column and cell row.
     std::pair<int, int> Planner::XYToCR_(double x, double y)
     {
-        // The following functions may be used:
-        //   costmap_->getOriginX()
-        //   costmap_->getOriginY()
-        //   costmap_->getResolution()
-        //   std::ceil()
-        //   std::floor()
-
-        double dx = x - 0.0;
-        double dy = y + 0.0;
-
-        int c = std::ceil(dx);
-        int r = std::floor(dy);
-
+        double resolution = costmap_->getResolution();
+        double origin_x = costmap_->getOriginX();
+        double origin_y = costmap_->getOriginY();
+        
+        int c = static_cast<int>(std::floor((x - origin_x) / resolution));
+        int r = static_cast<int>(std::floor((y - origin_y) / resolution));
+        
         return {c, r};
     }
     
     // Converts cell column and cell row to world coordinates.
     std::pair<double, double> Planner::CRToXY_(int c, int r)
     {
-        // The following functions may be used:
-        //   this->costmap_->getResolution()
-        //   this->costmap_->getOriginX()
-        //   this->costmap_->getOriginY()
-
-        double x = c + 0.0;
-        double y = r - 1.0;
-
+        double resolution = costmap_->getResolution();
+        double origin_x = costmap_->getOriginX();
+        double origin_y = costmap_->getOriginY();
+        
+        // +0.5 to get the center of the cell
+        double x = origin_x + (c + 0.5) * resolution;
+        double y = origin_y + (r + 0.5) * resolution;
+        
         return {x, y};
     }
 
@@ -65,7 +59,8 @@ namespace ee4308::turtle
         //   this->costmap_->getSizeInCellsX()
         //   this->costmap_->getSizeInCellsY()
 
-        return r * 2 + c * 1;
+        // Row-major order: index = row * num_columns + column
+        return r * costmap_->getSizeInCellsX() + c;
     }
 
     // Returns true if out of map, false otherwise.
@@ -75,7 +70,9 @@ namespace ee4308::turtle
         //   this->costmap_->getSizeInCellsX()
         //   this->costmap_->getSizeInCellsY()
 
-        return c < -1 || r < -1;
+        return c < 0 || r < 0 || 
+           c >= static_cast<int>(costmap_->getSizeInCellsX()) || 
+           r >= static_cast<int>(costmap_->getSizeInCellsY());
     }
 
     nav_msgs::msg::Path Planner::createPlan(
@@ -84,41 +81,42 @@ namespace ee4308::turtle
         std::function<bool()> /*cancel_checker*/)
     {
         // =========== DELETE / COMMENT LINES IN {} ONCE READY TO CODE PLANNER ===================
-        { // Start (for lab 1 and testing)
-            nav_msgs::msg::Path path;
-            path.poses.clear();
-            path.header.frame_id = this->global_frame_id_;
-            path.header.stamp = this->node_->now();
+        // { // Start (for lab 1 and testing)
+        //     nav_msgs::msg::Path path;
+        //     path.poses.clear();
+        //     path.header.frame_id = this->global_frame_id_;
+        //     path.header.stamp = this->node_->now();
             
-            double dx = start.pose.position.x - goal.pose.position.x;
-            double dy = start.pose.position.y - goal.pose.position.y;
-            int num_steps = std::floor(std::hypot(dx, dy) / 0.05);
-            std::vector<AStarNode> nodes;
-            for (int s = 0; s < num_steps; ++s)
-            {
-                geometry_msgs::msg::PoseStamped pose; 
-                pose.pose.position.x = dx * s / num_steps + goal.pose.position.x;
-                pose.pose.position.y =  dy * s / num_steps + goal.pose.position.y;
-                path.poses.push_back(pose);
-            }
+        //     double dx = start.pose.position.x - goal.pose.position.x;
+        //     double dy = start.pose.position.y - goal.pose.position.y;
+        //     int num_steps = std::floor(std::hypot(dx, dy) / 0.05);
+        //     std::vector<AStarNode> nodes;
+        //     for (int s = 0; s < num_steps; ++s)
+        //     {
+        //         geometry_msgs::msg::PoseStamped pose; 
+        //         pose.pose.position.x = dx * s / num_steps + goal.pose.position.x;
+        //         pose.pose.position.y =  dy * s / num_steps + goal.pose.position.y;
+        //         path.poses.push_back(pose);
+        //     }
 
-            std::reverse(path.poses.begin(), path.poses.end());
+        //     std::reverse(path.poses.begin(), path.poses.end());
 
-            geometry_msgs::msg::PoseStamped goal_ = goal;
-            goal_.header.frame_id = "";
-            goal_.header.stamp = rclcpp::Time(); 
-            path.poses.push_back(goal_);
+        //     geometry_msgs::msg::PoseStamped goal_ = goal;
+        //     goal_.header.frame_id = "";
+        //     goal_.header.stamp = rclcpp::Time(); 
+        //     path.poses.push_back(goal_);
 
-            return path;
-        } // End (for lab 1 and testing)
+        //     return path;
+        // } // End (for lab 1 and testing)
 
         // =========== Initializations ===================
 
         // Create a vector of nodes (modify accordingly)
+        // TODO: use costmap_->getSizeInCellsX() and costmap_->getSizeInCellsY() to get the actual map size and initialize the nodes vector accordingly.
         std::vector<AStarNode> nodes;
-        for (int c = 0; c < 10; ++c)
+        for (size_t r = 0; r < costmap_->getSizeInCellsY(); ++r)
         {
-            for (int r = -1; r < 11; ++r)
+            for (size_t c = 0; c < costmap_->getSizeInCellsX(); ++c)
             {
                 nodes.emplace_back(c, r);
             }
@@ -134,10 +132,10 @@ namespace ee4308::turtle
         // do some start node initialization (modify accordingly)
         int start_idx = this->CRToIndex_(start_c, start_r);
         AStarNode *start_node = &nodes[start_idx];
-        start_node->g = 0.0;
+        start_node->g = 0.0; //Initialize start node with 0 g -cost.
         start_node->h = 0.0;
-        start_node->f = INFINITY;
-        open_list.push(start_node);
+        start_node->f = 0.0;
+        open_list.push(start_node); //Queue start node into open-list.
 
         // ================ Expansion loop ========================
         while (rclcpp::ok() && !open_list.empty())
@@ -146,28 +144,94 @@ namespace ee4308::turtle
             AStarNode *node = open_list.top();
             open_list.pop();
 
+            // RCLCPP_INFO_STREAM(this->node_->get_logger(), "Expanding node at c: " << node->c << ", r: " << node->r << " with f: " << node->f);
+
+            // If n was previously expanded Then Continue 
+            if (node->expanded)
+            {
+                continue;
+            }
+
             // do something if goal found
             if (goal_c == node->c && goal_r == node->r)
-            {
-                return this->writeToPath_(node, goal);
+            {   
+            
+                auto preliminary_path = this->writeToPath_(node, goal);
+                
+                // Apply Savitsky Golay smoothing to the path.
+                auto smoothed_path = this->savitsky_golay_smoothing_(preliminary_path);
+
+                return smoothed_path;
             }
+
+            // Mark n as expanded.
+            node->expanded = true;
 
             // do stuff in expansion loop
 
             // ================ Neighbor loop ========================
             for (auto [dc, dr] : std::vector<std::pair<int, int>>{{1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1}})
             {
+                
                 int nb_c = node->c + dc;
                 int nb_r = node->r + dr;
 
-                (void) nb_c; // avoids unused variable warnings. Can be deleted.
-                (void) nb_r; // avoids unused variable warnings. Can be deleted.
+                // RCLCPP_INFO_STREAM(this->node_->get_logger(), "  Checking neighbor at c: " << nb_c << ", r: " << nb_r);
+
+                // (void) nb_c; // avoids unused variable warnings. Can be deleted.
+                // (void) nb_r; // avoids unused variable warnings. Can be deleted.
 
                 // do stuff in neighbor loop
+
+                // outofmap check
+                if (this->outOfMap_(nb_c, nb_r)) {
+                    continue;
+                }
+
+                // Skip if cost too high (inaccessible)
+                unsigned char cost = costmap_->getCost(nb_c, nb_r);
+                if (cost > this->max_access_cost_) {
+                    continue;
+                }
+
+                auto [nb_x, nb_y] = this->CRToXY_(nb_c, nb_r);
+                auto nb_idx = this->CRToIndex_(nb_c, nb_r);
+                auto [node_x, node_y] = this->CRToXY_(node->c, node->r);
+                auto distance_nb = std::hypot(nb_x - node_x, nb_y - node_y);
+                auto g_tilde = node->g + distance_nb * this->costmap_->getCost(nb_c, nb_r); //TODO: check if there is Euclidean cost weight or something
+                
+                if (g_tilde < nodes[nb_idx].g) {
+                    // update node info
+                    nodes[nb_idx].g = g_tilde;
+                    nodes[nb_idx].h = this->calculateHeuristic_(nb_c, nb_r, goal_c, goal_r);
+                    nodes[nb_idx].f = nodes[nb_idx].g + nodes[nb_idx].h;
+                    nodes[nb_idx].parent = node;
+
+                    // push to open list if not expanded
+                    if (!nodes[nb_idx].expanded) {
+                        open_list.push(&nodes[nb_idx]);
+                    }
+                }
             }
         }
 
+        // If we reach here, then there is no path found.
+        RCLCPP_WARN(this->node_->get_logger(), "No path found!!!!!");
         return this->writeToPath_(nullptr, goal); // no path
+    }
+
+    double Planner::calculateHeuristic_(int c, int r, int goal_c, int goal_r)
+    {
+        // You may use std::hypot() function.
+        return std::hypot(goal_c - c, goal_r - r);
+    }
+
+    nav_msgs::msg::Path Planner::savitsky_golay_smoothing_(
+        const nav_msgs::msg::Path &preliminary_path)
+    {
+        // TODO: Implement Savitsky-Golay smoothing here.
+        
+        return preliminary_path;
     }
 
     nav_msgs::msg::Path Planner::writeToPath_(
@@ -195,10 +259,11 @@ namespace ee4308::turtle
             path.poses.push_back(pose);
 
             // go to the next node
-            node = goal_node->parent;
+            node = node->parent;
         }
         
         // don't forget to reverse the path!
+        std::reverse(path.poses.begin(), path.poses.end());
 
         // push the original goal (contains the final yaw angle of the robot)
         goal.header.frame_id = "";

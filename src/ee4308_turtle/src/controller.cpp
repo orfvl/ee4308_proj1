@@ -114,15 +114,15 @@ namespace ee4308::turtle
         // Constrain v to within the largest allowable linear speed.
         double desired_linear_vel = std::clamp(desired_linear_vel_, -max_linear_vel_, max_linear_vel_);
 
-        RCLCPP_INFO_STREAM(node_->get_logger(),
-                             "Closest idx: " << closest_point_idx <<
-                             ", Lookahead idx: " << lookahead_point_idx <<
-                             ", x_delta: " << x_delta <<
-                             ", y_delta: " << y_delta <<
-                             ", dist: " << dist <<
-                             ", curvature: " << curvature <<
-                             ", desired_linear_vel: " << desired_linear_vel <<
-                             ", desired_angular_vel: " << desired_angular_vel);
+        // RCLCPP_INFO_STREAM(node_->get_logger(),
+        //                      "Closest idx: " << closest_point_idx <<
+        //                      ", Lookahead idx: " << lookahead_point_idx <<
+        //                      ", x_delta: " << x_delta <<
+        //                      ", y_delta: " << y_delta <<
+        //                      ", dist: " << dist <<
+        //                      ", curvature: " << curvature <<
+        //                      ", desired_linear_vel: " << desired_linear_vel <<
+        //                      ", desired_angular_vel: " << desired_angular_vel);
         return writeCmdVel(desired_linear_vel, desired_angular_vel);
     }
 
