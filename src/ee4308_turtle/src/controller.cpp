@@ -55,13 +55,75 @@ namespace ee4308::turtle
         // get goal pose (contains the "clicked" goal rotation and position)
         geometry_msgs::msg::PoseStamped goal_pose = global_plan_.poses.back();
 
-        // get lookahead?
-        geometry_msgs::msg::PoseStamped lookahead_pose = goal_pose;
+        // If the robot is close to the goal Then return Zero velocities
+        if (ee4308::getDistance(rbt_pose.pose.position, goal_pose.pose.position) < xy_goal_thres_ &&
+            std::abs(ee4308::getYawFromQuaternion(rbt_pose.pose.orientation) - ee4308::getYawFromQuaternion(goal_pose.pose.orientation)) < yaw_goal_thres_)
+        {
+            RCLCPP_INFO_STREAM(node_->get_logger(), "Goal reached!");
+            return writeCmdVel(0, 0);
+        }
 
-        double linear_vel = 0 * (lookahead_pose.pose.position.x - rbt_pose.pose.position.x);
-        double angular_vel = 0 * ee4308::getYawFromQuaternion(goal_pose.pose.orientation);
+        // Find the point along the path that is closest to the robot.
+        // TODO: optimize search by starting from last closest point/ last point
+        double min_dist = std::numeric_limits<double>::max();
+        size_t closest_point_idx = 0;
+        for (size_t i = 0; i < global_plan_.poses.size(); ++i)
+        {
+            double dist = ee4308::getDistance(rbt_pose.pose.position, global_plan_.poses[i].pose.position);
+            if (dist < min_dist)
+            {
+                min_dist = dist;
+                closest_point_idx = i;
+            }
+        }
 
-        return writeCmdVel(linear_vel, angular_vel);
+        // From the closest point, find the lookahead point.
+        size_t lookahead_point_idx = closest_point_idx;
+        double dist = 0.0;
+        for (size_t i = closest_point_idx; i < global_plan_.poses.size(); ++i)
+        {
+            dist = ee4308::getDistance(rbt_pose.pose.position, global_plan_.poses[i].pose.position);
+            if (dist >= desired_lookahead_dist_)
+            {
+                lookahead_point_idx = i;
+                break;
+            }
+        }
+        geometry_msgs::msg::PoseStamped lookahead_pose = global_plan_.poses[lookahead_point_idx];
+
+        // Transform the lookahead point into the robot frame to get (x_dash, y_dash)
+        double x_delta = lookahead_pose.pose.position.x - rbt_pose.pose.position.x;
+        double y_delta = lookahead_pose.pose.position.y - rbt_pose.pose.position.y;
+
+        double theta_rbt = ee4308::getYawFromQuaternion(rbt_pose.pose.orientation); 
+        // double x_dash = x_delta * cos(theta_rbt) +
+        //                 y_delta * sin(theta_rbt);
+        double y_dash = -x_delta * sin(theta_rbt) +
+                        y_delta * cos(theta_rbt);
+
+
+        // Calculate the curvature.
+        double curvature = (2 * y_dash) / (dist * dist);
+
+        // Calculate ω from v and c .
+        double desired_angular_vel =curvature * desired_linear_vel_;
+
+        // Constrain ω to within the largest allowable angular speed.
+        desired_angular_vel = std::clamp(desired_angular_vel, -max_angular_vel_, max_angular_vel_);
+
+        // Constrain v to within the largest allowable linear speed.
+        double desired_linear_vel = std::clamp(desired_linear_vel_, -max_linear_vel_, max_linear_vel_);
+
+        RCLCPP_INFO_STREAM(node_->get_logger(),
+                             "Closest idx: " << closest_point_idx <<
+                             ", Lookahead idx: " << lookahead_point_idx <<
+                             ", x_delta: " << x_delta <<
+                             ", y_delta: " << y_delta <<
+                             ", dist: " << dist <<
+                             ", curvature: " << curvature <<
+                             ", desired_linear_vel: " << desired_linear_vel <<
+                             ", desired_angular_vel: " << desired_angular_vel);
+        return writeCmdVel(desired_linear_vel, desired_angular_vel);
     }
 
     geometry_msgs::msg::TwistStamped Controller::writeCmdVel(double linear_vel, double angular_vel)
