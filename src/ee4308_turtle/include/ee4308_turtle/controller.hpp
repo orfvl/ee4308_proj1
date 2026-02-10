@@ -51,6 +51,14 @@ namespace ee4308::turtle
         double xy_goal_thres_;
         double yaw_goal_thres_;
 
+        //P-controller yaw gain 
+        double yaw_gain_;
+        // Regulated Pure pursuit parameters
+        double curvature_threshold_;
+        double proximity_threshold_;
+        double lookahead_gain_;
+
+
         // topics 
         nav_msgs::msg::Path global_plan_;
         // std::vector<float> scan_ranges_;

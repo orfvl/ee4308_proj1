@@ -22,6 +22,10 @@ namespace ee4308::turtle
         ee4308::initParam(this->node_, this->plugin_name_ + ".xy_goal_thres", this->xy_goal_thres_, 0.05);
         ee4308::initParam(this->node_, this->plugin_name_ + ".yaw_goal_thres", this->yaw_goal_thres_, 0.25);
 
+        ee4308::initParam(this->node_, this->plugin_name_ + ".yaw_gain", this->yaw_gain_, 0.4);
+        ee4308::initParam(this->node_, this->plugin_name_ + ".curvature_threshold", this->curvature_threshold_, 100.0);
+        ee4308::initParam(this->node_, this->plugin_name_ + ".proximity_threshold", this->proximity_threshold_, 0.05);
+        ee4308::initParam(this->node_, this->plugin_name_ + ".lookahead_gain", this->lookahead_gain_, 1.0);
         // initialize topics
         // this->sub_scan_ = this->node_->create_subscription<sensor_msgs::msg::LaserScan>(
         //     "scan", rclcpp::SensorDataQoS(),
@@ -56,9 +60,13 @@ namespace ee4308::turtle
         geometry_msgs::msg::PoseStamped goal_pose = global_plan_.poses.back();
 
         // If the robot is close to the goal Then return Zero velocities
-        if (ee4308::getDistance(rbt_pose.pose.position, goal_pose.pose.position) < xy_goal_thres_ &&
-            std::abs(ee4308::getYawFromQuaternion(rbt_pose.pose.orientation) - ee4308::getYawFromQuaternion(goal_pose.pose.orientation)) < yaw_goal_thres_)
+        if (ee4308::getDistance(rbt_pose.pose.position, goal_pose.pose.position) < xy_goal_thres_)
         {
+            double yaw_error = ee4308::getYawFromQuaternion(rbt_pose.pose.orientation) - ee4308::getYawFromQuaternion(goal_pose.pose.orientation);
+            if (yaw_error > yaw_goal_thres_){
+                return writeCmdVel(0, std::clamp(- yaw_error* this->yaw_gain_, -max_angular_vel_, max_angular_vel_));
+            }
+
             RCLCPP_INFO_STREAM(node_->get_logger(), "Goal reached!");
             return writeCmdVel(0, 0);
         }
@@ -106,23 +114,36 @@ namespace ee4308::turtle
         double curvature = (2 * y_dash) / (dist * dist);
 
         // Calculate ω from v and c .
-        double desired_angular_vel =curvature * desired_linear_vel_;
+        
+        double desired_linear_vel = this->desired_linear_vel_;
+        RCLCPP_INFO_STREAM(node_->get_logger(), "Curvature: " << curvature << ", Dist: " << dist);
+        // Calculate the curvature heuristic. 
+        RCLCPP_INFO_STREAM(node_->get_logger(), "Before curvature adjustment, desired_linear_vel: " << desired_linear_vel);
+        desired_linear_vel = ( std::abs(curvature) > this->curvature_threshold_) ? desired_linear_vel * this->curvature_threshold_/curvature : desired_linear_vel; 
+        RCLCPP_INFO_STREAM(node_->get_logger(), "After curvature adjustment, desired_linear_vel: " << desired_linear_vel);    
+        // Calculate the obstacle heuristic. 
+        desired_linear_vel = (dist < this->proximity_threshold_) ? desired_linear_vel * dist/this->proximity_threshold_ : desired_linear_vel;
+        RCLCPP_INFO_STREAM(node_->get_logger(), "After proximity adjustment, desired_linear_vel: " << desired_linear_vel);
+        
+        // Vary the lookahead.
+        desired_lookahead_dist_ = this->lookahead_gain_ * std::abs(desired_linear_vel);
 
+        double desired_angular_vel =curvature * desired_linear_vel;
         // Constrain ω to within the largest allowable angular speed.
         desired_angular_vel = std::clamp(desired_angular_vel, -max_angular_vel_, max_angular_vel_);
 
         // Constrain v to within the largest allowable linear speed.
-        double desired_linear_vel = std::clamp(desired_linear_vel_, -max_linear_vel_, max_linear_vel_);
+        desired_linear_vel = std::clamp(desired_linear_vel, -max_linear_vel_, max_linear_vel_);
 
-        // RCLCPP_INFO_STREAM(node_->get_logger(),
-        //                      "Closest idx: " << closest_point_idx <<
-        //                      ", Lookahead idx: " << lookahead_point_idx <<
-        //                      ", x_delta: " << x_delta <<
-        //                      ", y_delta: " << y_delta <<
-        //                      ", dist: " << dist <<
-        //                      ", curvature: " << curvature <<
-        //                      ", desired_linear_vel: " << desired_linear_vel <<
-        //                      ", desired_angular_vel: " << desired_angular_vel);
+        RCLCPP_INFO_STREAM(node_->get_logger(),
+                             "Closest idx: " << closest_point_idx <<
+                             ", Lookahead idx: " << lookahead_point_idx <<
+                             ", x_delta: " << x_delta <<
+                             ", y_delta: " << y_delta <<
+                             ", dist: " << dist <<
+                             ", curvature: " << curvature <<
+                             ", desired_linear_vel: " << desired_linear_vel <<
+                             ", desired_angular_vel: " << desired_angular_vel);
         return writeCmdVel(desired_linear_vel, desired_angular_vel);
     }
 
