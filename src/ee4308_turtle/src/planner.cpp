@@ -21,6 +21,8 @@ namespace ee4308::turtle
 
         // declare parameters to let the node know we are using these params.
         ee4308::initParam(this->node_, this->plugin_name_ + ".max_access_cost", this->max_access_cost_, 254);
+        ee4308::initParam(this->node_, this->plugin_name_ + ".sg_half_cost", this->sg_half_cost_, 4);
+        ee4308::initParam(this->node_, this->plugin_name_ + ".sg_order", this->sg_order_, 3);
         ee4308::initParam(this->node_, this->plugin_name_ + ".interpolation_distance", this->interpolation_distance_, 0.05);
     }
 
@@ -229,9 +231,40 @@ namespace ee4308::turtle
     nav_msgs::msg::Path Planner::savitsky_golay_smoothing_(
         const nav_msgs::msg::Path &preliminary_path)
     {
-        // TODO: Implement Savitsky-Golay smoothing here.
+        nav_msgs::msg::Path smoothed_path = preliminary_path;
+       
+        Eigen::MatrixXd J = Eigen::MatrixXd::Zero(
+            2 * this->sg_half_cost_ + 1,
+            this->sg_order_ + 1);
         
-        return preliminary_path;
+        for (int i = 0; i < this->sg_order_ + 1; i++){
+            for (int j = 0; j < 2 * this->sg_half_cost_ + 1; j++){
+                if(i == 0) {
+                    J(j, i) = 1;
+                    continue;
+                }
+                J(j, i) = std::pow((-this->sg_half_cost_ + j), i);
+            }
+        }
+
+        Eigen::RowVectorXd A = ((J.transpose() * J).inverse() * J.transpose()).row(0);
+        
+        for (int k=0; k < static_cast<int>(preliminary_path.poses.size()); k++){
+            smoothed_path.poses[k].pose.position.x = 0.0;
+            smoothed_path.poses[k].pose.position.y = 0.0;
+            for (int point=0; point < 2 * this->sg_half_cost_ + 1; point++){
+                int idx = k - this->sg_half_cost_ + point;
+                if (idx < 0) {
+                    idx = 0;
+                }
+                if (idx >= static_cast<int>(preliminary_path.poses.size())){
+                    idx = preliminary_path.poses.size() - 1;
+                }
+                smoothed_path.poses[k].pose.position.x += A(point) * preliminary_path.poses[idx].pose.position.x;
+                smoothed_path.poses[k].pose.position.y += A(point) * preliminary_path.poses[idx].pose.position.y;
+            }
+        }
+        return smoothed_path;
     }
 
     nav_msgs::msg::Path Planner::writeToPath_(
