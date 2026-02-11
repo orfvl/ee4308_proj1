@@ -63,7 +63,7 @@ namespace ee4308::turtle
         if (ee4308::getDistance(rbt_pose.pose.position, goal_pose.pose.position) < xy_goal_thres_)
         {
             double yaw_error = ee4308::getYawFromQuaternion(rbt_pose.pose.orientation) - ee4308::getYawFromQuaternion(goal_pose.pose.orientation);
-            if (yaw_error > yaw_goal_thres_){
+            if (std::abs(yaw_error) > yaw_goal_thres_){
                 return writeCmdVel(0, std::clamp(- yaw_error* this->yaw_gain_, -max_angular_vel_, max_angular_vel_));
             }
 
@@ -72,7 +72,6 @@ namespace ee4308::turtle
         }
 
         // Find the point along the path that is closest to the robot.
-        // TODO: optimize search by starting from last closest point/ last point
         
         size_t start_i = 0; // Starting index is first point
         if (last_closest_point_recorded_ == true) 
