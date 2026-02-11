@@ -58,6 +58,9 @@ namespace ee4308::turtle
         double proximity_threshold_;
         double lookahead_gain_;
 
+        //Store Closests point between calls to computevelocitycommands
+        size_t last_closest_point_index_{0}; // Initialize to first point during construction
+        bool last_closest_point_recorded_{false};    
 
         // topics 
         nav_msgs::msg::Path global_plan_;

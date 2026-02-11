@@ -73,9 +73,18 @@ namespace ee4308::turtle
 
         // Find the point along the path that is closest to the robot.
         // TODO: optimize search by starting from last closest point/ last point
+        
+        size_t start_i = 0; // Starting index is first point
+        if (last_closest_point_recorded_ == true) 
+        {
+            start_i = last_closest_point_index_; // Start index is closest point of previous iteration
+        }
+        
         double min_dist = std::numeric_limits<double>::max();
-        size_t closest_point_idx = 0;
-        for (size_t i = 0; i < global_plan_.poses.size(); ++i)
+
+        size_t closest_point_idx = start_i;
+
+        for (size_t i = closest_point_idx; i < global_plan_.poses.size(); ++i)
         {
             double dist = ee4308::getDistance(rbt_pose.pose.position, global_plan_.poses[i].pose.position);
             if (dist < min_dist)
@@ -85,6 +94,9 @@ namespace ee4308::turtle
             }
         }
 
+        last_closest_point_index_ = closest_point_idx;
+        last_closest_point_recorded_ = true;
+    
         // From the closest point, find the lookahead point.
         size_t lookahead_point_idx = closest_point_idx;
         double dist = 0.0;
