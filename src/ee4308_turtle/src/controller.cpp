@@ -16,7 +16,7 @@ namespace ee4308::turtle
 
         // initialize parameters
         ee4308::initParam(this->node_, this->plugin_name_ + ".desired_linear_vel", this->desired_linear_vel_, 0.2);
-        ee4308::initParam(this->node_, this->plugin_name_ + ".desired_lookahead_dist", this->desired_lookahead_dist_, 0.4);
+        ee4308::initParam(this->node_, this->plugin_name_ + ".desired_lookahead_dist", this->desired_lookahead_dist_, 0.2);
         ee4308::initParam(this->node_, this->plugin_name_ + ".max_angular_vel", this->max_angular_vel_, 1.0);
         ee4308::initParam(this->node_, this->plugin_name_ + ".max_linear_vel", this->max_linear_vel_, 0.22);
         ee4308::initParam(this->node_, this->plugin_name_ + ".xy_goal_thres", this->xy_goal_thres_, 0.05);
@@ -27,15 +27,15 @@ namespace ee4308::turtle
         ee4308::initParam(this->node_, this->plugin_name_ + ".proximity_threshold", this->proximity_threshold_, 0.05);
         ee4308::initParam(this->node_, this->plugin_name_ + ".lookahead_gain", this->lookahead_gain_, 0.4);
         // initialize topics
-        // this->sub_scan_ = this->node_->create_subscription<sensor_msgs::msg::LaserScan>(
-        //     "scan", rclcpp::SensorDataQoS(),
-        //     std::bind(&Controller::callbackSubScan_, this, std::placeholders::_1));
+        this->sub_scan_ = this->node_->create_subscription<sensor_msgs::msg::LaserScan>(
+            "scan", rclcpp::SensorDataQoS(),
+            std::bind(&Controller::callbackSubScan_, this, std::placeholders::_1));
     }
 
-    // void Controller::callbackSubScan_(sensor_msgs::msg::LaserScan::SharedPtr msg)
-    // {
-    //     this->scan_ranges_ = msg->ranges;
-    // }
+    void Controller::callbackSubScan_(sensor_msgs::msg::LaserScan::SharedPtr msg)
+    {
+        this->scan_ranges_ = msg->ranges;
+    }
 
     geometry_msgs::msg::TwistStamped Controller::computeVelocityCommands(
         const geometry_msgs::msg::PoseStamped &rbt_pose_odom,
@@ -105,8 +105,16 @@ namespace ee4308::turtle
         double y_delta = lookahead_pose.pose.position.y - rbt_pose.pose.position.y;
 
         double theta_rbt = ee4308::getYawFromQuaternion(rbt_pose.pose.orientation); 
-        // double x_dash = x_delta * cos(theta_rbt) +
-        //                 y_delta * sin(theta_rbt);
+
+        
+        double theta_dash = ee4308::limitAngle(atan2(y_delta, x_delta) - theta_rbt);
+        //If point is behind robot, let robot turn
+        if (std::abs(theta_dash) > M_PI_2)
+        {
+            RCLCPP_INFO_STREAM(node_->get_logger(),"Point behind robot: theta_dash"  << theta_dash);
+            return writeCmdVel(0, std::clamp( theta_dash*this->yaw_gain_,  -max_angular_vel_, max_angular_vel_));
+        }
+
         double y_dash = -x_delta * sin(theta_rbt) +
                         y_delta * cos(theta_rbt);
 
@@ -120,16 +128,19 @@ namespace ee4308::turtle
         double desired_angular_vel =curvature * desired_linear_vel;
 
         // RCLCPP_INFO_STREAM(node_->get_logger(), "Curvature: " << curvature << ", Dist: " << dist << "lookahead_dist_: " << desired_lookahead_dist_  );
-        // // Calculate the curvature heuristic. 
+        // Calculate the curvature heuristic. 
         // RCLCPP_INFO_STREAM(node_->get_logger(), "Before curvature adjustment, desired_linear_vel: " << desired_linear_vel);
-        // desired_linear_vel = ( std::abs(curvature) > this->curvature_threshold_) ? desired_linear_vel * this->curvature_threshold_/curvature : desired_linear_vel; 
+        desired_linear_vel = ( std::abs(curvature) > this->curvature_threshold_) ? desired_linear_vel * this->curvature_threshold_/curvature : desired_linear_vel; 
+
         // RCLCPP_INFO_STREAM(node_->get_logger(), "After curvature adjustment, desired_linear_vel: " << desired_linear_vel);    
-        // // Calculate the obstacle heuristic. 
-        // desired_linear_vel = (dist < this->proximity_threshold_) ? desired_linear_vel * dist/this->proximity_threshold_ : desired_linear_vel;
+        // Calculate the obstacle heuristic.
+        double d_obstacle = getMinObstacleDistance_(); 
+        desired_linear_vel = (d_obstacle < this->proximity_threshold_) ? desired_linear_vel * d_obstacle/this->proximity_threshold_ : desired_linear_vel;
+
         // RCLCPP_INFO_STREAM(node_->get_logger(), "After proximity adjustment, desired_linear_vel: " << desired_linear_vel);
         
         // // Vary the lookahead.
-        // desired_lookahead_dist_ = this->lookahead_gain_ * std::abs(desired_linear_vel);
+        desired_lookahead_dist_ = this->lookahead_gain_ * std::abs(desired_linear_vel);
 
         
         // Constrain ω to within the largest allowable angular speed.
@@ -138,16 +149,36 @@ namespace ee4308::turtle
         // Constrain v to within the largest allowable linear speed.
         desired_linear_vel = std::clamp(desired_linear_vel, -max_linear_vel_, max_linear_vel_);
 
-        RCLCPP_INFO_STREAM(node_->get_logger(),
-                             "Closest idx: " << closest_point_idx <<
-                             ", Lookahead idx: " << lookahead_point_idx <<
-                             ", x_delta: " << x_delta <<
-                             ", y_delta: " << y_delta <<
-                             ", dist: " << dist <<
-                             ", curvature: " << curvature <<
-                             ", desired_linear_vel: " << desired_linear_vel <<
-                             ", desired_angular_vel: " << desired_angular_vel);
+        // RCLCPP_INFO_STREAM(node_->get_logger(),
+        //                      "Closest idx: " << closest_point_idx <<
+        //                      ", Lookahead idx: " << lookahead_point_idx <<
+        //                      ", x_delta: " << x_delta <<
+        //                      ", y_delta: " << y_delta <<
+        //                      ", dist: " << dist <<
+        //                      ", curvature: " << curvature <<
+        //                      ", desired_linear_vel: " << desired_linear_vel <<
+        //                      ", desired_angular_vel: " << desired_angular_vel);
         return writeCmdVel(desired_linear_vel, desired_angular_vel);
+    }
+
+    double Controller::getMinObstacleDistance_()
+    {
+        if (scan_ranges_.empty())
+        {
+            return std::numeric_limits<double>::max();  // No scan data, assume no obstacles
+        }
+
+        double min_dist = std::numeric_limits<double>::max();
+        for (const auto& range : scan_ranges_)
+        {
+            // Filter out invalid readings (inf, nan, or zero)
+            if (std::isfinite(range) && range > 0.0)
+            {
+                min_dist = std::min(min_dist, static_cast<double>(range));
+            }
+        }
+        
+        return min_dist;
     }
 
     geometry_msgs::msg::TwistStamped Controller::writeCmdVel(double linear_vel, double angular_vel)
