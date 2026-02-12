@@ -13,14 +13,14 @@ controller_server:
 
     goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.05
-      yaw_goal_tolerance: 0.05
+      xy_goal_tolerance: 0.1
+      yaw_goal_tolerance: 0.1
       stateful: True
 
     FollowPath:
       plugin: "ee4308::turtle::Controller"
       desired_linear_vel: 0.2
-      desired_lookahead_dist: 0.4
+      desired_lookahead_dist: 0.2
       max_angular_vel: 1.0
       max_linear_vel: 0.22
       xy_goal_thres: 0.05
@@ -152,7 +152,7 @@ local_costmap:
       plugins: ["obstacle_layer", "voxel_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        inflation_radius: 0.5
+        inflation_radius: 0.3
         cost_scaling_factor: 5.0
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"

@@ -25,7 +25,7 @@ namespace ee4308::turtle
         ee4308::initParam(this->node_, this->plugin_name_ + ".yaw_gain", this->yaw_gain_, 0.4);
         ee4308::initParam(this->node_, this->plugin_name_ + ".curvature_threshold", this->curvature_threshold_, 100.0);
         ee4308::initParam(this->node_, this->plugin_name_ + ".proximity_threshold", this->proximity_threshold_, 0.05);
-        ee4308::initParam(this->node_, this->plugin_name_ + ".lookahead_gain", this->lookahead_gain_, 1.0);
+        ee4308::initParam(this->node_, this->plugin_name_ + ".lookahead_gain", this->lookahead_gain_, 0.4);
         // initialize topics
         // this->sub_scan_ = this->node_->create_subscription<sensor_msgs::msg::LaserScan>(
         //     "scan", rclcpp::SensorDataQoS(),
@@ -62,9 +62,9 @@ namespace ee4308::turtle
         // If the robot is close to the goal Then return Zero velocities
         if (ee4308::getDistance(rbt_pose.pose.position, goal_pose.pose.position) < xy_goal_thres_)
         {
-            double yaw_error = ee4308::getYawFromQuaternion(rbt_pose.pose.orientation) - ee4308::getYawFromQuaternion(goal_pose.pose.orientation);
+            double yaw_error = ee4308::limitAngle(ee4308::getYawFromQuaternion(goal_pose.pose.orientation) - ee4308::getYawFromQuaternion(rbt_pose.pose.orientation)) ;
             if (std::abs(yaw_error) > yaw_goal_thres_){
-                return writeCmdVel(0, std::clamp(- yaw_error* this->yaw_gain_, -max_angular_vel_, max_angular_vel_));
+                return writeCmdVel(0, std::clamp(yaw_error* this->yaw_gain_, -max_angular_vel_, max_angular_vel_));
             }
 
             RCLCPP_INFO_STREAM(node_->get_logger(), "Goal reached!");
@@ -72,18 +72,9 @@ namespace ee4308::turtle
         }
 
         // Find the point along the path that is closest to the robot.
-        
-        size_t start_i = 0; // Starting index is first point
-        if (last_closest_point_recorded_ == true) 
-        {
-            start_i = last_closest_point_index_; // Start index is closest point of previous iteration
-        }
-        
         double min_dist = std::numeric_limits<double>::max();
-
-        size_t closest_point_idx = start_i;
-
-        for (size_t i = closest_point_idx; i < global_plan_.poses.size(); ++i)
+        size_t closest_point_idx = 0;
+        for (size_t i = 0; i < global_plan_.poses.size(); ++i)
         {
             double dist = ee4308::getDistance(rbt_pose.pose.position, global_plan_.poses[i].pose.position);
             if (dist < min_dist)
@@ -92,23 +83,22 @@ namespace ee4308::turtle
                 closest_point_idx = i;
             }
         }
-
-        last_closest_point_index_ = closest_point_idx;
-        last_closest_point_recorded_ = true;
     
         // From the closest point, find the lookahead point.
         size_t lookahead_point_idx = closest_point_idx;
-        double dist = 0.0;
         for (size_t i = closest_point_idx; i < global_plan_.poses.size(); ++i)
         {
-            dist = ee4308::getDistance(rbt_pose.pose.position, global_plan_.poses[i].pose.position);
-            if (dist >= desired_lookahead_dist_)
+            double temp_dist = ee4308::getDistance(rbt_pose.pose.position, global_plan_.poses[i].pose.position);
+            if (temp_dist >= desired_lookahead_dist_)
             {
                 lookahead_point_idx = i;
                 break;
             }
         }
         geometry_msgs::msg::PoseStamped lookahead_pose = global_plan_.poses[lookahead_point_idx];
+
+        // NOW calculate dist to the actual lookahead point
+        double dist = ee4308::getDistance(rbt_pose.pose.position, lookahead_pose.pose.position);
 
         // Transform the lookahead point into the robot frame to get (x_dash, y_dash)
         double x_delta = lookahead_pose.pose.position.x - rbt_pose.pose.position.x;
@@ -127,19 +117,21 @@ namespace ee4308::turtle
         // Calculate ω from v and c .
         
         double desired_linear_vel = this->desired_linear_vel_;
-        RCLCPP_INFO_STREAM(node_->get_logger(), "Curvature: " << curvature << ", Dist: " << dist);
-        // Calculate the curvature heuristic. 
-        RCLCPP_INFO_STREAM(node_->get_logger(), "Before curvature adjustment, desired_linear_vel: " << desired_linear_vel);
-        desired_linear_vel = ( std::abs(curvature) > this->curvature_threshold_) ? desired_linear_vel * this->curvature_threshold_/curvature : desired_linear_vel; 
-        RCLCPP_INFO_STREAM(node_->get_logger(), "After curvature adjustment, desired_linear_vel: " << desired_linear_vel);    
-        // Calculate the obstacle heuristic. 
-        desired_linear_vel = (dist < this->proximity_threshold_) ? desired_linear_vel * dist/this->proximity_threshold_ : desired_linear_vel;
-        RCLCPP_INFO_STREAM(node_->get_logger(), "After proximity adjustment, desired_linear_vel: " << desired_linear_vel);
-        
-        // Vary the lookahead.
-        desired_lookahead_dist_ = this->lookahead_gain_ * std::abs(desired_linear_vel);
-
         double desired_angular_vel =curvature * desired_linear_vel;
+
+        // RCLCPP_INFO_STREAM(node_->get_logger(), "Curvature: " << curvature << ", Dist: " << dist << "lookahead_dist_: " << desired_lookahead_dist_  );
+        // // Calculate the curvature heuristic. 
+        // RCLCPP_INFO_STREAM(node_->get_logger(), "Before curvature adjustment, desired_linear_vel: " << desired_linear_vel);
+        // desired_linear_vel = ( std::abs(curvature) > this->curvature_threshold_) ? desired_linear_vel * this->curvature_threshold_/curvature : desired_linear_vel; 
+        // RCLCPP_INFO_STREAM(node_->get_logger(), "After curvature adjustment, desired_linear_vel: " << desired_linear_vel);    
+        // // Calculate the obstacle heuristic. 
+        // desired_linear_vel = (dist < this->proximity_threshold_) ? desired_linear_vel * dist/this->proximity_threshold_ : desired_linear_vel;
+        // RCLCPP_INFO_STREAM(node_->get_logger(), "After proximity adjustment, desired_linear_vel: " << desired_linear_vel);
+        
+        // // Vary the lookahead.
+        // desired_lookahead_dist_ = this->lookahead_gain_ * std::abs(desired_linear_vel);
+
+        
         // Constrain ω to within the largest allowable angular speed.
         desired_angular_vel = std::clamp(desired_angular_vel, -max_angular_vel_, max_angular_vel_);
 
