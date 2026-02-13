@@ -50,6 +50,8 @@ namespace ee4308::turtle
         double max_linear_vel_;
         double xy_goal_thres_;
         double yaw_goal_thres_;
+        double min_lookahead_dist_;
+        double max_lookahead_dist_;
 
         //P-controller yaw gain 
         double yaw_gain_;
@@ -64,9 +66,9 @@ namespace ee4308::turtle
 
         // topics 
         nav_msgs::msg::Path global_plan_;
-        // std::vector<float> scan_ranges_;
-        // rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sub_scan_;
-        // void callbackSubScan_(sensor_msgs::msg::LaserScan::SharedPtr msg);
+        std::vector<float> scan_ranges_;
+        rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sub_scan_;
+        void callbackSubScan_(sensor_msgs::msg::LaserScan::SharedPtr msg);
 
         // other "protected" functions
         geometry_msgs::msg::TwistStamped writeCmdVel(double linear_vel, double angular_vel);
