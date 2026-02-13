@@ -26,6 +26,7 @@ namespace ee4308::turtle
         ee4308::initParam(this->node_, this->plugin_name_ + ".curvature_threshold", this->curvature_threshold_, 100.0);
         ee4308::initParam(this->node_, this->plugin_name_ + ".proximity_threshold", this->proximity_threshold_, 0.05);
         ee4308::initParam(this->node_, this->plugin_name_ + ".lookahead_gain", this->lookahead_gain_, 0.4);
+        ee4308::initParam(this->node_, this->plugin_name_ + ".min_lookahead", this->min_lookahead_, 0.2);
         // initialize topics
         this->sub_scan_ = this->node_->create_subscription<sensor_msgs::msg::LaserScan>(
             "scan", rclcpp::SensorDataQoS(),
@@ -64,6 +65,7 @@ namespace ee4308::turtle
         {
             double yaw_error = ee4308::limitAngle(ee4308::getYawFromQuaternion(goal_pose.pose.orientation) - ee4308::getYawFromQuaternion(rbt_pose.pose.orientation)) ;
             if (std::abs(yaw_error) > yaw_goal_thres_){
+                RCLCPP_INFO_STREAM(node_->get_logger(), "Close to goal: yaw error " << yaw_error << " omega " << std::clamp(yaw_error* this->yaw_gain_, -max_angular_vel_, max_angular_vel_));
                 return writeCmdVel(0, std::clamp(yaw_error* this->yaw_gain_, -max_angular_vel_, max_angular_vel_));
             }
 
@@ -104,19 +106,20 @@ namespace ee4308::turtle
         double x_delta = lookahead_pose.pose.position.x - rbt_pose.pose.position.x;
         double y_delta = lookahead_pose.pose.position.y - rbt_pose.pose.position.y;
 
-        double theta_rbt = ee4308::getYawFromQuaternion(rbt_pose.pose.orientation); 
+        double theta_rbt = ee4308::limitAngle(ee4308::getYawFromQuaternion(rbt_pose.pose.orientation)); 
 
-        
-        double theta_dash = ee4308::limitAngle(atan2(y_delta, x_delta) - theta_rbt);
+        double x_dash = x_delta * std::cos(theta_rbt) + y_delta * std::sin(theta_rbt);
+        double y_dash = -x_delta * std::sin(theta_rbt) +
+                        y_delta * std::cos(theta_rbt);
         //If point is behind robot, let robot turn
-        if (std::abs(theta_dash) > M_PI_2)
+        if (x_dash  < 0)
         {
-            RCLCPP_INFO_STREAM(node_->get_logger(),"Point behind robot: theta_dash"  << theta_dash);
+            double theta_dash = ee4308::limitAngle(atan2(y_dash, x_dash));
+            RCLCPP_INFO_STREAM(node_->get_logger(),"Point behind robot: x_dash"  << x_dash);
             return writeCmdVel(0, std::clamp( theta_dash*this->yaw_gain_,  -max_angular_vel_, max_angular_vel_));
         }
 
-        double y_dash = -x_delta * sin(theta_rbt) +
-                        y_delta * cos(theta_rbt);
+        
 
 
         // Calculate the curvature.
@@ -129,18 +132,18 @@ namespace ee4308::turtle
 
         // RCLCPP_INFO_STREAM(node_->get_logger(), "Curvature: " << curvature << ", Dist: " << dist << "lookahead_dist_: " << desired_lookahead_dist_  );
         // Calculate the curvature heuristic. 
-        // RCLCPP_INFO_STREAM(node_->get_logger(), "Before curvature adjustment, desired_linear_vel: " << desired_linear_vel);
+        RCLCPP_INFO_STREAM(node_->get_logger(), "Before curvature adjustment, desired_linear_vel: " << desired_linear_vel);
         desired_linear_vel = ( std::abs(curvature) > this->curvature_threshold_) ? desired_linear_vel * this->curvature_threshold_/std::abs(curvature) : desired_linear_vel; 
 
-        // RCLCPP_INFO_STREAM(node_->get_logger(), "After curvature adjustment, desired_linear_vel: " << desired_linear_vel);    
+        RCLCPP_INFO_STREAM(node_->get_logger(), "After curvature adjustment, desired_linear_vel: " << desired_linear_vel << " curvature " << curvature);    
         // Calculate the obstacle heuristic.
         double d_obstacle = getMinObstacleDistance_(); 
         desired_linear_vel = (d_obstacle < this->proximity_threshold_) ? desired_linear_vel * d_obstacle/this->proximity_threshold_ : desired_linear_vel;
 
-        // RCLCPP_INFO_STREAM(node_->get_logger(), "After proximity adjustment, desired_linear_vel: " << desired_linear_vel);
+        RCLCPP_INFO_STREAM(node_->get_logger(), "After proximity adjustment, desired_linear_vel: " << desired_linear_vel);
         
         // Vary the lookahead.
-        desired_lookahead_dist_ = std::max(0.1, this->lookahead_gain_ * std::abs(desired_linear_vel));
+        desired_lookahead_dist_ = std::max(this->min_lookahead_, this->lookahead_gain_ * std::abs(desired_linear_vel));
 
         
         // Constrain ω to within the largest allowable angular speed.
@@ -154,7 +157,7 @@ namespace ee4308::turtle
         //                      ", Lookahead idx: " << lookahead_point_idx <<
         //                      ", x_delta: " << x_delta <<
         //                      ", y_delta: " << y_delta <<
-        //                      ", dist: " << dist <<
+        //                      ", dist: " << dist);
         //                      ", curvature: " << curvature <<
         //                      ", desired_linear_vel: " << desired_linear_vel <<
         //                      ", desired_angular_vel: " << desired_angular_vel);

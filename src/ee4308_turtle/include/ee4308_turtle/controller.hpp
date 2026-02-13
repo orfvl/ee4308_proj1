@@ -57,7 +57,7 @@ namespace ee4308::turtle
         double curvature_threshold_;
         double proximity_threshold_;
         double lookahead_gain_;
-
+        double min_lookahead_;
         //Store Closests point between calls to computevelocitycommands
         size_t last_closest_point_index_{0}; // Initialize to first point during construction
         bool last_closest_point_recorded_{false};    
