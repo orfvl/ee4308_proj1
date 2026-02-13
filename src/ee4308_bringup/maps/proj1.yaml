@@ -1,7 +1,7 @@
 image: proj1.pgm
 mode: trinary
 resolution: 0.050
-origin: [-3.541, -5.788, 0]
+origin: [-3.820, -6.626, 0]
 negate: 0
 occupied_thresh: 0.65
 free_thresh: 0.196
