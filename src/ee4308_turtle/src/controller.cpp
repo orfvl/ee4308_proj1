@@ -31,7 +31,7 @@ namespace ee4308::turtle
         ee4308::initParam(this->node_, this->plugin_name_ + ".lookahead_gain", this->lookahead_gain_, 1.0);
         ee4308::initParam(this->node_, this->plugin_name_ + ".min_lookahead_dist", this->min_lookahead_dist_, 0.2);
         ee4308::initParam(this->node_, this->plugin_name_ + ".max_lookahead_dist", this->max_lookahead_dist_, 0.6);
-
+        
         // initialize topics
         this->sub_scan_ = this->node_->create_subscription<sensor_msgs::msg::LaserScan>(
             "scan", rclcpp::SensorDataQoS(),
@@ -88,31 +88,35 @@ namespace ee4308::turtle
         // -------------------------------- Find Closest Point -------------------------------
         // Find the point along the path that is closest to the robot
         
-        size_t closest_point_index = 0;
-        double distance_to_closest = ee4308::getDistance(x_r, y_r, 
-            global_plan_.poses[closest_point_index].pose.position.x,
-            global_plan_.poses[closest_point_index].pose.position.y);
-        double contending_distance;
-
-        for (size_t i = 0; i < global_plan_.poses.size(); i++)
+        size_t start_i = 0; // Starting index is first point
+        if (last_closest_point_recorded_ == true) 
         {
-            contending_distance = ee4308::getDistance(x_r, y_r, 
-            global_plan_.poses[i].pose.position.x,
-            global_plan_.poses[i].pose.position.y);
+            start_i = last_closest_point_index_; // Start index is closest point of previous iteration
+        }
+        
+        double min_dist = std::numeric_limits<double>::max();
 
-            if (distance_to_closest > contending_distance)
+        size_t closest_point_idx = start_i;
+
+        for (size_t i = closest_point_idx; i < global_plan_.poses.size(); ++i)
+        {
+            double dist = ee4308::getDistance(rbt_pose.pose.position, global_plan_.poses[i].pose.position);
+            if (dist < min_dist)
             {
-                closest_point_index = i;
-                distance_to_closest = contending_distance;
+                min_dist = dist;
+                closest_point_idx = i;
             }
         }
+
+        last_closest_point_index_ = closest_point_idx;
+        last_closest_point_recorded_ = true;
 
         // -------------------------------- Find Lookahead Point -------------------------------
         // From the closest point, find the lookahead point
 
-        size_t lookahead_point_idx = closest_point_index;
+        size_t lookahead_point_idx = closest_point_idx;
         double dist = 0.0;
-        for (size_t i = closest_point_index; i < global_plan_.poses.size(); ++i)
+        for (size_t i = closest_point_idx; i < global_plan_.poses.size(); ++i)
         {
             dist = ee4308::getDistance(rbt_pose.pose.position, global_plan_.poses[i].pose.position);
             if (dist >= desired_lookahead_dist_)
