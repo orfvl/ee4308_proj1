@@ -53,6 +53,48 @@ namespace ee4308::turtle
         return {x, y};
     }
 
+    std::pair<bool, double> Planner::LOS(int c1, int r1, int c2, int r2)
+    {
+        auto [start_x, start_y] = this->CRToXY_(c1, r1);
+        auto [end_x, end_y] = this->CRToXY_(c2, r2);
+
+        double dx = (end_x - start_x);
+        double dy = (end_y - start_y);
+
+        double step_size = costmap_->getResolution()*0.5;
+        double steps = std::max(std::abs(dx), std::abs(dy)) / step_size;
+        double step_x = dx/steps;
+        double step_y = dy/steps;
+        double los_cost = 0.0;
+
+        double cur_x = start_x;
+        double cur_y = start_y;
+
+        for (int i = 1; i <= steps; ++i)
+        {
+            cur_x += step_x;
+            cur_y += step_y;
+            auto [check_c, check_r] = this->XYToCR_(cur_x, cur_y);
+            if (costmap_->getCost(check_c, check_r) > this->max_access_cost_)
+            {
+                return {false, los_cost};
+            }
+            for (auto [dc, dr] : std::vector<std::pair<int, int>>{{1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1}})
+            {
+                
+                int nb_c = check_c + dc;
+                int nb_r = check_r + dr;
+                if (costmap_->getCost(nb_c, nb_r) > this->max_access_cost_){
+                    return {false, los_cost};
+                }
+            }
+
+            los_cost += costmap_->getCost(check_c, check_r) * std::hypot(step_x, step_y) * costmap_->getResolution(); 
+        }
+        return {true, los_cost};
+    }
+
+
 
     // Converts cell column and cell row to flattened array index.
     int Planner::CRToIndex_(int c, int r)
@@ -196,6 +238,27 @@ namespace ee4308::turtle
                     continue;
                 }
 
+                if(node->parent != nullptr){
+                  auto [los_bool, los_cost] = this->LOS(node->parent->c, node->parent->r, nb_c, nb_r);
+                  if (los_bool){
+                    auto g_tilde = node->parent->g + los_cost;
+                    auto nb_idx = this->CRToIndex_(nb_c, nb_r);
+                    if (g_tilde < nodes[nb_idx].g) {
+                        // update node info
+                        nodes[nb_idx].g = g_tilde;
+                        nodes[nb_idx].h = this->calculateHeuristic_(nb_c, nb_r, goal_c, goal_r);
+                        nodes[nb_idx].f = nodes[nb_idx].g + nodes[nb_idx].h;
+                        nodes[nb_idx].parent = node->parent;
+
+                        // push to open list if not expanded
+                        if (!nodes[nb_idx].expanded) {
+                            open_list.push(&nodes[nb_idx]);
+                        }
+                        continue;
+                       }
+                    }
+                }
+
                 auto [nb_x, nb_y] = this->CRToXY_(nb_c, nb_r);
                 auto nb_idx = this->CRToIndex_(nb_c, nb_r);
                 auto [node_x, node_y] = this->CRToXY_(node->c, node->r);
@@ -214,7 +277,9 @@ namespace ee4308::turtle
                         open_list.push(&nodes[nb_idx]);
                     }
                 }
-            }
+                
+            }       
+            
         }
 
         // If we reach here, then there is no path found.
@@ -301,13 +366,44 @@ namespace ee4308::turtle
         // don't forget to reverse the path!
         std::reverse(path.poses.begin(), path.poses.end());
 
+        nav_msgs::msg::Path interpolated_path;
+        interpolated_path.header = path.header;
+
+        for (size_t i = 0; i < path.poses.size(); ++i)
+        {
+            if (i == 0)
+            {
+                interpolated_path.poses.push_back(path.poses[i]);
+                continue;
+            }
+
+            double x0 = path.poses[i - 1].pose.position.x;
+            double y0 = path.poses[i - 1].pose.position.y;
+            double x1 = path.poses[i].pose.position.x;
+            double y1 = path.poses[i].pose.position.y;
+            double dist = std::hypot(x1 - x0, y1 - y0);
+            int num_interp = static_cast<int>(std::ceil(dist / this->interpolation_distance_));
+
+            for (int j = 1; j <= num_interp; ++j)
+            {
+                double t = static_cast<double>(j) / (num_interp + 1);
+                geometry_msgs::msg::PoseStamped pose;
+                pose.pose.position.x = x0 + t * (x1 - x0);
+                pose.pose.position.y = y0 + t * (y1 - y0);
+                pose.pose.orientation.w = 1.0;
+                interpolated_path.poses.push_back(pose);
+            }
+
+            interpolated_path.poses.push_back(path.poses[i]);
+        }
+
         // push the original goal (contains the final yaw angle of the robot)
         goal.header.frame_id = "";
         goal.header.stamp = rclcpp::Time(); // possible bug: prevents nav2 and tf2 from having time extrapolation issues.
-        path.poses.push_back(goal);
+        interpolated_path.poses.push_back(goal);
 
         // return path;
-        return path;
+        return interpolated_path;
     }
 
     // ======================================== DO NOT TOUCH =================================

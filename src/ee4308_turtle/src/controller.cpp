@@ -132,15 +132,15 @@ namespace ee4308::turtle
 
         // RCLCPP_INFO_STREAM(node_->get_logger(), "Curvature: " << curvature << ", Dist: " << dist << "lookahead_dist_: " << desired_lookahead_dist_  );
         // Calculate the curvature heuristic. 
-        RCLCPP_INFO_STREAM(node_->get_logger(), "Before curvature adjustment, desired_linear_vel: " << desired_linear_vel);
+        // RCLCPP_INFO_STREAM(node_->get_logger(), "Before curvature adjustment, desired_linear_vel: " << desired_linear_vel);
         desired_linear_vel = ( std::abs(curvature) > this->curvature_threshold_) ? desired_linear_vel * this->curvature_threshold_/std::abs(curvature) : desired_linear_vel; 
 
-        RCLCPP_INFO_STREAM(node_->get_logger(), "After curvature adjustment, desired_linear_vel: " << desired_linear_vel << " curvature " << curvature);    
+        // RCLCPP_INFO_STREAM(node_->get_logger(), "After curvature adjustment, desired_linear_vel: " << desired_linear_vel << " curvature " << curvature);    
         // Calculate the obstacle heuristic.
         double d_obstacle = getMinObstacleDistance_(); 
         desired_linear_vel = (d_obstacle < this->proximity_threshold_) ? desired_linear_vel * d_obstacle/this->proximity_threshold_ : desired_linear_vel;
 
-        RCLCPP_INFO_STREAM(node_->get_logger(), "After proximity adjustment, desired_linear_vel: " << desired_linear_vel);
+        // RCLCPP_INFO_STREAM(node_->get_logger(), "After proximity adjustment, desired_linear_vel: " << desired_linear_vel);
         
         // Vary the lookahead.
         desired_lookahead_dist_ = std::max(this->min_lookahead_, this->lookahead_gain_ * std::abs(desired_linear_vel));

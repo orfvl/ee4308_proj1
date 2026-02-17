@@ -80,6 +80,7 @@ namespace ee4308::turtle
         int CRToIndex_(int c, int r);
         std::pair<double, double> CRToXY_(int c, int r);
         bool outOfMap_(int c, int r);
+        std::pair<bool, double> LOS(int c1, int r1, int c2, int r2);
 
         nav_msgs::msg::Path writeToPath_(AStarNode *goal_node, geometry_msgs::msg::PoseStamped goal);
     

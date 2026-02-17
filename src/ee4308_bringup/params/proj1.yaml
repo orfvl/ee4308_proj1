@@ -40,7 +40,7 @@ planner_server:
     planner_plugins: ["GridBased"]
     GridBased:
       plugin: "ee4308::turtle::Planner"
-      max_access_cost: 210
+      max_access_cost: 200
       interpolation_distance: 0.05
 
 amcl:
