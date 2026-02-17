@@ -225,7 +225,10 @@ namespace ee4308::turtle
     double Planner::calculateHeuristic_(int c, int r, int goal_c, int goal_r)
     {
         // You may use std::hypot() function.
-        return std::hypot(goal_c - c, goal_r - r);
+        // return std::hypot(goal_c - c, goal_r - r);
+
+        // Chebyshev distance heuristic (admissible for 8-connected grid)
+        return std::max(std::abs(goal_c - c), std::abs(goal_r - r));
     }
 
     nav_msgs::msg::Path Planner::savitsky_golay_smoothing_(
