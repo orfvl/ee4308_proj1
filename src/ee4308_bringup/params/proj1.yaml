@@ -27,21 +27,20 @@ controller_server:
       yaw_goal_thres: 0.25
       #For regulated pure pursuit:
       yaw_gain: 0.8
-      curvature_threshold: 32.0
+      curvature_threshold: 1.8
       proximity_threshold: 0.25
-      lookahead_gain: 0.6
-      min_lookahead: 0.2
-
+      lookahead_gain: 2.0
+      min_lookahead: 0.175
 
     enable_stamped_cmd_vel: true
 
 planner_server:
   ros__parameters:
-    expected_planner_frequency: 10.0
+    expected_planner_frequency: 8.0
     planner_plugins: ["GridBased"]
     GridBased:
       plugin: "ee4308::turtle::Planner"
-      max_access_cost: 210
+      max_access_cost: 200
       los_max_access_cost: 40
       interpolation_distance: 0.05
 
@@ -248,7 +247,7 @@ global_costmap:
         transform_tolerance: 0.1
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        inflation_radius: 0.3
+        inflation_radius: 0.4
         cost_scaling_factor: 5.0
       always_send_full_costmap: true
 
