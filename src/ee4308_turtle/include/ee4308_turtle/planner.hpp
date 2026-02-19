@@ -72,6 +72,7 @@ namespace ee4308::turtle
 
         // parameters
         int max_access_cost_;
+        int los_max_access_cost_;
         double interpolation_distance_;
         int sg_half_cost_;
         int sg_order_;
@@ -81,8 +82,16 @@ namespace ee4308::turtle
         std::pair<double, double> CRToXY_(int c, int r);
         bool outOfMap_(int c, int r);
 
+        bool hasLineOfSight_(
+            const geometry_msgs::msg::PoseStamped &a,
+            const geometry_msgs::msg::PoseStamped &b);
+
+        nav_msgs::msg::Path lineOfSightPrune_(const nav_msgs::msg::Path &in);
+
         nav_msgs::msg::Path writeToPath_(AStarNode *goal_node, geometry_msgs::msg::PoseStamped goal);
-    
+            
+        nav_msgs::msg::Path interpolatePath_(const nav_msgs::msg::Path &in, double step);
+
         // New helper function to calculate heuristic
         double calculateHeuristic_(int c, int r, int goal_c, int goal_r);
 

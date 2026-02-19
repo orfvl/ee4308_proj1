@@ -1,5 +1,8 @@
 #include "ee4308_turtle/planner.hpp"
 
+#include <algorithm>
+#include <cmath>
+
 namespace ee4308::turtle
 {
 
@@ -20,7 +23,8 @@ namespace ee4308::turtle
         this->global_frame_id_ = costmap_ros->getGlobalFrameID();
 
         // declare parameters to let the node know we are using these params.
-        ee4308::initParam(this->node_, this->plugin_name_ + ".max_access_cost", this->max_access_cost_, 254);
+        ee4308::initParam(this->node_, this->plugin_name_ + ".max_access_cost", this->max_access_cost_, 254); // default 254
+        ee4308::initParam(this->node_, this->plugin_name_ + ".los_max_access_cost", this->los_max_access_cost_, 40); // default 40 
         ee4308::initParam(this->node_, this->plugin_name_ + ".sg_half_cost", this->sg_half_cost_, 4);
         ee4308::initParam(this->node_, this->plugin_name_ + ".sg_order", this->sg_order_, 3);
         ee4308::initParam(this->node_, this->plugin_name_ + ".interpolation_distance", this->interpolation_distance_, 0.05);
@@ -76,6 +80,194 @@ namespace ee4308::turtle
            c >= static_cast<int>(costmap_->getSizeInCellsX()) || 
            r >= static_cast<int>(costmap_->getSizeInCellsY());
     }
+
+    bool Planner::hasLineOfSight_(
+        const geometry_msgs::msg::PoseStamped &a,
+        const geometry_msgs::msg::PoseStamped &b)
+    {
+        if (!costmap_) return false;
+
+        // Treat inflation as blocked as well (tune this!)
+        // 200 is a common starting point: blocks deep inflation but not all of it.
+        const unsigned char LOS_BLOCK_COST = static_cast<unsigned char>(los_max_access_cost_); // TODO: tune this!
+
+        auto [c0, r0] = XYToCR_(a.pose.position.x, a.pose.position.y);
+        auto [c1, r1] = XYToCR_(b.pose.position.x, b.pose.position.y);
+
+        if (outOfMap_(c0, r0) || outOfMap_(c1, r1)) return false;
+
+        // Endpoint sanity (if endpoints are in high cost, reject)
+        if (costmap_->getCost(c0, r0) >= LOS_BLOCK_COST) return false;
+        if (costmap_->getCost(c1, r1) >= LOS_BLOCK_COST) return false;
+
+        // Supercover-style sampling in cell space (robust, hard to "miss" walls)
+        const int dc = c1 - c0;
+        const int dr = r1 - r0;
+
+        const int steps = std::max(std::abs(dc), std::abs(dr));
+        if (steps == 0) return true;
+
+        // Oversample to reduce aliasing (tune: 2 is usually plenty)
+        const int samples = steps * 2;
+
+        int prev_c = c0;
+        int prev_r = r0;
+
+        for (int i = 0; i <= samples; ++i)
+        {
+            const double t = static_cast<double>(i) / static_cast<double>(samples);
+            const int c = static_cast<int>(std::lround(c0 + t * dc));
+            const int r = static_cast<int>(std::lround(r0 + t * dr));
+
+            if (outOfMap_(c, r)) return false;
+
+            // Blocked cell?
+            if (costmap_->getCost(c, r) >= LOS_BLOCK_COST) return false;
+
+            // Corner-cut prevention: if we moved diagonally, check both side cells too
+            if (c != prev_c && r != prev_r)
+            {
+                if (!outOfMap_(prev_c, r) && costmap_->getCost(prev_c, r) >= LOS_BLOCK_COST) return false;
+                if (!outOfMap_(c, prev_r) && costmap_->getCost(c, prev_r) >= LOS_BLOCK_COST) return false;
+            }
+
+            prev_c = c;
+            prev_r = r;
+        }
+
+        return true;
+    }
+
+
+
+    //     nav_msgs::msg::Path Planner::lineOfSightPrune_(const nav_msgs::msg::Path &in)
+    // {
+    //     nav_msgs::msg::Path out;
+    //     out.header = in.header;
+    //     out.poses.clear();
+
+    //     const size_t n = in.poses.size();
+    //     if (n == 0) return out;
+    //     if (n <= 2) { out.poses = in.poses; return out; }
+
+    //     size_t i = 0;
+    //     out.poses.push_back(in.poses[i]);
+
+    //     while (i < n - 1)
+    //     {
+    //         size_t best = i + 1;
+
+    //         // Grow forward until LOS breaks, keep farthest visible
+    //         for (size_t j = i + 1; j < n; ++j)
+    //         {
+    //             if (hasLineOfSight_(in.poses[i], in.poses[j]))
+    //             {
+    //                 best = j;
+    //             }
+    //             else
+    //             {
+    //                 break; // LOS usually won't come back after it breaks
+    //             }
+    //         }
+
+    //         out.poses.push_back(in.poses[best]);
+    //         i = best;
+    //     }
+
+    //     return out;
+    // }
+
+
+
+    nav_msgs::msg::Path Planner::lineOfSightPrune_(const nav_msgs::msg::Path &in)
+    {
+        // Line-of-sight pruning to remove unnecessary intermediate waypoints
+        // from an anchor pose i, connect directly to the farthest
+        // pose j we can still "see"; then set i=j and repeat.
+        nav_msgs::msg::Path out;
+        out.header = in.header;
+        out.poses.clear();
+
+        const size_t n = in.poses.size();
+        if (n == 0)
+        {
+            return out;
+        }
+        if (n <= 2)
+        {
+            out.poses = in.poses;
+            return out;
+        }
+
+        size_t anchor_index = 0;
+        out.poses.push_back(in.poses[anchor_index]);
+
+        while (anchor_index < n - 1)
+        {
+            // Start by trying to connect to the end of the path,
+            // and walk backwards until line-of-sight is satisfied.
+            size_t candidate_index = n - 1;
+            while (candidate_index > anchor_index + 1 &&
+                   !this->hasLineOfSight_(in.poses[anchor_index], in.poses[candidate_index]))
+            {
+                --candidate_index;
+            }
+
+            out.poses.push_back(in.poses[candidate_index]);
+            anchor_index = candidate_index;
+        }
+
+        return out;
+    }
+
+        nav_msgs::msg::Path Planner::interpolatePath_(const nav_msgs::msg::Path &in, double step)
+    {
+        nav_msgs::msg::Path out;
+        out.header = in.header;
+        out.poses.clear();
+
+        if (in.poses.empty()) return out;
+        if (in.poses.size() == 1) { out.poses = in.poses; return out; }
+
+        out.poses.push_back(in.poses.front());
+
+        for (size_t k = 0; k + 1 < in.poses.size(); ++k)
+        {
+            const auto &p0 = in.poses[k].pose.position;
+            const auto &p1 = in.poses[k + 1].pose.position;
+
+            const double dx = p1.x - p0.x;
+            const double dy = p1.y - p0.y;
+            const double L  = std::hypot(dx, dy);
+
+            if (L < 1e-9)
+            {
+                continue;
+            }
+
+            const int num = std::max(1, static_cast<int>(std::floor(L / step)));
+
+            for (int i = 1; i <= num; ++i)
+            {
+                const double t = static_cast<double>(i) / static_cast<double>(num);
+
+                geometry_msgs::msg::PoseStamped pose = in.poses[k]; // copy header/frame
+                pose.pose.position.x = p0.x + t * dx;
+                pose.pose.position.y = p0.y + t * dy;
+                pose.pose.position.z = 0.0;
+
+                // leave orientation alone (controller usually ignores it for intermediate points)
+                out.poses.push_back(pose);
+            }
+        }
+
+        // Ensure exact last pose matches input last pose
+        out.poses.back() = in.poses.back();
+        return out;
+    }
+
+
+
 
     nav_msgs::msg::Path Planner::createPlan(
         const geometry_msgs::msg::PoseStamped &start,
@@ -159,11 +351,19 @@ namespace ee4308::turtle
             {   
             
                 auto preliminary_path = this->writeToPath_(node, goal);
-                
-                // Apply Savitsky Golay smoothing to the path.
-                auto smoothed_path = this->savitsky_golay_smoothing_(preliminary_path);
 
+                // Then prune (clearance-aware + forward greedy)
+                auto pruned_path = this->lineOfSightPrune_(preliminary_path);
+
+                // Then re-interpolate so controller has enough points
+                auto interpolated_path = this->interpolatePath_(pruned_path, this->interpolation_distance_); //TODO: tune the interpolation distance (tradeoff: too dense -> more smoothing but more computation, too sparse -> less smoothing but less computation). You can also make this a parameter if you want.
+
+                // Smooth first (dense points -> safe smoothing)
+                auto smoothed_path = this->savitsky_golay_smoothing_(interpolated_path);
+
+        
                 return smoothed_path;
+
             }
 
             // Mark n as expanded.
@@ -192,7 +392,7 @@ namespace ee4308::turtle
 
                 // Skip if cost too high (inaccessible)
                 unsigned char cost = costmap_->getCost(nb_c, nb_r);
-                if (cost > this->max_access_cost_) {
+                if (cost >= this->max_access_cost_) {
                     continue;
                 }
 
