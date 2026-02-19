@@ -25,6 +25,8 @@ find_package(nav2_util REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(eigen3_cmake_module REQUIRED)
 find_package(Eigen3)
+find_package(std_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 # find_package(ee4308_core REQUIRED)
 # find_package(ee4308_interfaces)
 
@@ -46,6 +48,8 @@ set (DEPENDENCIES
   nav2_costmap_2d
   pluginlib
   Eigen3
+  std_msgs
+  visualization_msgs
   # ee4308_core
 )
 
