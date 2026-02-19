@@ -31,6 +31,13 @@ namespace ee4308::turtle
         this->sub_scan_ = this->node_->create_subscription<sensor_msgs::msg::LaserScan>(
             "scan", rclcpp::SensorDataQoS(),
             std::bind(&Controller::callbackSubScan_, this, std::placeholders::_1));
+
+        this->pub_lookahead_dist_ = this->node_->create_publisher<std_msgs::msg::Float64>(
+            "lookahead_distance", 10);
+        this->pub_lookahead_marker_ = this->node_->create_publisher<visualization_msgs::msg::Marker>(
+            "lookahead_marker", 10);
+        this->pub_curvature_ = this->node_->create_publisher<std_msgs::msg::Float64>(
+            "curvature", 10);
     }
 
     void Controller::callbackSubScan_(sensor_msgs::msg::LaserScan::SharedPtr msg)
@@ -63,6 +70,14 @@ namespace ee4308::turtle
         // If the robot is close to the goal Then return Zero velocities
         if (ee4308::getDistance(rbt_pose.pose.position, goal_pose.pose.position) < xy_goal_thres_)
         {
+            isGoalReached_ = true;
+        }
+        if (ee4308::getDistance(rbt_pose.pose.position, goal_pose.pose.position) > 2*xy_goal_thres_)
+        {
+            isGoalReached_ = false;
+        }
+        if (isGoalReached_)
+        {
             double yaw_error = ee4308::limitAngle(ee4308::getYawFromQuaternion(goal_pose.pose.orientation) - ee4308::getYawFromQuaternion(rbt_pose.pose.orientation)) ;
             if (std::abs(yaw_error) > yaw_goal_thres_){
                 RCLCPP_INFO_STREAM(node_->get_logger(), "Close to goal: yaw error " << yaw_error << " omega " << std::clamp(yaw_error* this->yaw_gain_, -max_angular_vel_, max_angular_vel_));
@@ -72,6 +87,7 @@ namespace ee4308::turtle
             RCLCPP_INFO_STREAM(node_->get_logger(), "Goal reached!");
             return writeCmdVel(0, 0);
         }
+        
 
         // Find the point along the path that is closest to the robot.
         double min_dist = std::numeric_limits<double>::max();
@@ -87,7 +103,7 @@ namespace ee4308::turtle
         }
     
         // From the closest point, find the lookahead point.
-        size_t lookahead_point_idx = closest_point_idx;
+        size_t lookahead_point_idx = global_plan_.poses.size() -1;
         for (size_t i = closest_point_idx; i < global_plan_.poses.size(); ++i)
         {
             double temp_dist = ee4308::getDistance(rbt_pose.pose.position, global_plan_.poses[i].pose.position);
@@ -98,6 +114,33 @@ namespace ee4308::turtle
             }
         }
         geometry_msgs::msg::PoseStamped lookahead_pose = global_plan_.poses[lookahead_point_idx];
+
+        // Publish lookahead distance as Float64
+        {
+            std_msgs::msg::Float64 dist_msg;
+            dist_msg.data = desired_lookahead_dist_;
+            pub_lookahead_dist_->publish(dist_msg);
+        }
+
+        // Publish lookahead point as a marker
+        {
+            visualization_msgs::msg::Marker marker;
+            marker.header.frame_id = "map";
+            marker.header.stamp = node_->now();
+            marker.ns = "lookahead";
+            marker.id = 0;
+            marker.type = visualization_msgs::msg::Marker::CYLINDER;
+            marker.action = visualization_msgs::msg::Marker::ADD;
+            marker.pose.position = lookahead_pose.pose.position;
+            marker.color.r = 0.0f;
+            marker.color.g = 1.0f;
+            marker.color.b = 0.0f;
+            marker.color.a = 0.3f;
+            marker.scale.x = 0.1;  // diameter in meters
+            marker.scale.y = 0.1;
+            marker.scale.z = 0.1;
+            pub_lookahead_marker_->publish(marker);
+        }
 
         // NOW calculate dist to the actual lookahead point
         double dist = ee4308::getDistance(rbt_pose.pose.position, lookahead_pose.pose.position);
@@ -111,11 +154,11 @@ namespace ee4308::turtle
         double x_dash = x_delta * std::cos(theta_rbt) + y_delta * std::sin(theta_rbt);
         double y_dash = -x_delta * std::sin(theta_rbt) +
                         y_delta * std::cos(theta_rbt);
+        double theta_dash = ee4308::limitAngle(atan2(y_dash, x_dash));
         //If point is behind robot, let robot turn
-        if (x_dash  < 0)
+        if (std::abs(theta_dash) > 4*M_PI/5)
         {
-            double theta_dash = ee4308::limitAngle(atan2(y_dash, x_dash));
-            RCLCPP_INFO_STREAM(node_->get_logger(),"Point behind robot: x_dash"  << x_dash);
+            RCLCPP_INFO_STREAM(node_->get_logger(),"Point behind robot: x_dash"  << x_dash << " theta_dash " << theta_dash);
             return writeCmdVel(0, std::clamp( theta_dash*this->yaw_gain_,  -max_angular_vel_, max_angular_vel_));
         }
 
@@ -125,6 +168,13 @@ namespace ee4308::turtle
         // Calculate the curvature.
         double curvature = (2 * y_dash) / (dist * dist);
 
+        // Publish curvature as Float64
+        {
+            std_msgs::msg::Float64 curvature_msg;
+            curvature_msg.data = curvature;
+            pub_curvature_->publish(curvature_msg);
+        }
+
         // Calculate ω from v and c .
         
         double desired_linear_vel = this->desired_linear_vel_;
@@ -132,15 +182,15 @@ namespace ee4308::turtle
 
         // RCLCPP_INFO_STREAM(node_->get_logger(), "Curvature: " << curvature << ", Dist: " << dist << "lookahead_dist_: " << desired_lookahead_dist_  );
         // Calculate the curvature heuristic. 
-        RCLCPP_INFO_STREAM(node_->get_logger(), "Before curvature adjustment, desired_linear_vel: " << desired_linear_vel);
+        // RCLCPP_INFO_STREAM(node_->get_logger(), "Before curvature adjustment, desired_linear_vel: " << desired_linear_vel);
         desired_linear_vel = ( std::abs(curvature) > this->curvature_threshold_) ? desired_linear_vel * this->curvature_threshold_/std::abs(curvature) : desired_linear_vel; 
 
-        RCLCPP_INFO_STREAM(node_->get_logger(), "After curvature adjustment, desired_linear_vel: " << desired_linear_vel << " curvature " << curvature);    
+        // RCLCPP_INFO_STREAM(node_->get_logger(), "After curvature adjustment, desired_linear_vel: " << desired_linear_vel << " curvature " << curvature);    
         // Calculate the obstacle heuristic.
         double d_obstacle = getMinObstacleDistance_(); 
         desired_linear_vel = (d_obstacle < this->proximity_threshold_) ? desired_linear_vel * d_obstacle/this->proximity_threshold_ : desired_linear_vel;
 
-        RCLCPP_INFO_STREAM(node_->get_logger(), "After proximity adjustment, desired_linear_vel: " << desired_linear_vel);
+        // RCLCPP_INFO_STREAM(node_->get_logger(), "After proximity adjustment, desired_linear_vel: " << desired_linear_vel);
         
         // Vary the lookahead.
         desired_lookahead_dist_ = std::max(this->min_lookahead_, this->lookahead_gain_ * std::abs(desired_linear_vel));

@@ -4,6 +4,8 @@
 #include <memory>
 
 #include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/float64.hpp"
+#include "visualization_msgs/msg/marker.hpp"
 #include "pluginlib/class_loader.hpp"
 #include "pluginlib/class_list_macros.hpp"
 #include "nav2_core/controller.hpp"
@@ -50,7 +52,7 @@ namespace ee4308::turtle
         double max_linear_vel_;
         double xy_goal_thres_;
         double yaw_goal_thres_;
-
+        
         //P-controller yaw gain 
         double yaw_gain_;
         // Regulated Pure pursuit parameters
@@ -62,11 +64,16 @@ namespace ee4308::turtle
         size_t last_closest_point_index_{0}; // Initialize to first point during construction
         bool last_closest_point_recorded_{false};    
 
+        bool isGoalReached_{false};
+
         // topics 
         nav_msgs::msg::Path global_plan_;
         std::vector<float> scan_ranges_;
         rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sub_scan_;
         void callbackSubScan_(sensor_msgs::msg::LaserScan::SharedPtr msg);
+        rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr pub_lookahead_dist_;
+        rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub_lookahead_marker_;
+        rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr pub_curvature_;
         
         // helper function get d_object for object heuristic
         double getMinObstacleDistance_();
