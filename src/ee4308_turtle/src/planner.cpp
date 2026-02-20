@@ -80,7 +80,7 @@ namespace ee4308::turtle
             {
                 return {false, los_cost};
             }
-            los_cost += (1+costmap_->getCost(check_c, check_r)) * std::hypot(step_x, step_y); 
+            los_cost += (26 + 0.9 * costmap_->getCost(check_c, check_r)) * std::hypot(step_x, step_y); 
         }
         return {true, los_cost};
     }
@@ -255,7 +255,7 @@ namespace ee4308::turtle
                 auto nb_idx = this->CRToIndex_(nb_c, nb_r);
                 auto [node_x, node_y] = this->CRToXY_(node->c, node->r);
                 auto distance_nb = std::hypot(nb_x - node_x, nb_y - node_y);
-                auto g_tilde = node->g + distance_nb * (this->costmap_->getCost(nb_c, nb_r)+1); //TODO: check if there is Euclidean cost weight or something
+                auto g_tilde = node->g + distance_nb * (this->costmap_->getCost(nb_c, nb_r)*0.9+26); //TODO: check if there is Euclidean cost weight or something
                 
                 if (g_tilde < nodes[nb_idx].g) {
                     // update node info

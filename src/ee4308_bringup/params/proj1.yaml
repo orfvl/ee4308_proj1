@@ -24,7 +24,7 @@ controller_server:
       max_angular_vel: 1.0
       max_linear_vel: 0.22
       xy_goal_thres: 0.1
-      yaw_goal_thres: 0.25
+      yaw_goal_thres: 0.1
       #For regulated pure pursuit:
       yaw_gain: 0.8
       curvature_threshold: 1.8
