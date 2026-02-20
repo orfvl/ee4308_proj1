@@ -79,17 +79,7 @@ namespace ee4308::turtle
             {
                 return {false, los_cost};
             }
-            for (auto [dc, dr] : std::vector<std::pair<int, int>>{{1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1}})
-            {
-                
-                int nb_c = check_c + dc;
-                int nb_r = check_r + dr;
-                if (costmap_->getCost(nb_c, nb_r) > this->max_access_cost_){
-                    return {false, los_cost};
-                }
-            }
-
-            los_cost += costmap_->getCost(check_c, check_r) * std::hypot(step_x, step_y) * costmap_->getResolution(); 
+            los_cost += costmap_->getCost(check_c, check_r) * std::hypot(step_x, step_y); 
         }
         return {true, los_cost};
     }
@@ -290,10 +280,10 @@ namespace ee4308::turtle
     double Planner::calculateHeuristic_(int c, int r, int goal_c, int goal_r)
     {
         // You may use std::hypot() function.
-        // return std::hypot(goal_c - c, goal_r - r);
+        return std::hypot(goal_c - c, goal_r - r);
 
         // Chebyshev distance heuristic (admissible for 8-connected grid)
-        return std::max(std::abs(goal_c - c), std::abs(goal_r - r));
+        //return std::max(std::abs(goal_c - c), std::abs(goal_r - r));
     }
 
     nav_msgs::msg::Path Planner::savitsky_golay_smoothing_(
