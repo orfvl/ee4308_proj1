@@ -24,6 +24,7 @@ namespace ee4308::turtle
         ee4308::initParam(this->node_, this->plugin_name_ + ".sg_half_cost", this->sg_half_cost_, 4);
         ee4308::initParam(this->node_, this->plugin_name_ + ".sg_order", this->sg_order_, 3);
         ee4308::initParam(this->node_, this->plugin_name_ + ".interpolation_distance", this->interpolation_distance_, 0.05);
+    
     }
 
     // Converts world coordinates to cell column and cell row.
@@ -79,7 +80,7 @@ namespace ee4308::turtle
             {
                 return {false, los_cost};
             }
-            los_cost += costmap_->getCost(check_c, check_r) * std::hypot(step_x, step_y); 
+            los_cost += (1+costmap_->getCost(check_c, check_r)) * std::hypot(step_x, step_y); 
         }
         return {true, los_cost};
     }
@@ -249,11 +250,12 @@ namespace ee4308::turtle
                     }
                 }
 
+                //Fall back to Astar 
                 auto [nb_x, nb_y] = this->CRToXY_(nb_c, nb_r);
                 auto nb_idx = this->CRToIndex_(nb_c, nb_r);
                 auto [node_x, node_y] = this->CRToXY_(node->c, node->r);
                 auto distance_nb = std::hypot(nb_x - node_x, nb_y - node_y);
-                auto g_tilde = node->g + distance_nb * this->costmap_->getCost(nb_c, nb_r); //TODO: check if there is Euclidean cost weight or something
+                auto g_tilde = node->g + distance_nb * (this->costmap_->getCost(nb_c, nb_r)+1); //TODO: check if there is Euclidean cost weight or something
                 
                 if (g_tilde < nodes[nb_idx].g) {
                     // update node info

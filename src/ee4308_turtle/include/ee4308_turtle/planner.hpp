@@ -86,7 +86,6 @@ namespace ee4308::turtle
     
         // New helper function to calculate heuristic
         double calculateHeuristic_(int c, int r, int goal_c, int goal_r);
-
         // 
         nav_msgs::msg::Path savitsky_golay_smoothing_(
             const nav_msgs::msg::Path &preliminary_path);
