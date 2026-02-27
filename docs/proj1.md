@@ -733,3 +733,21 @@ If your program is too slow or troubleshooting is required, refer to [tips.md](t
 2. Wait for a few seconds until the LED light on the Raspberry Pi stops blinking and turns red.
 
 3. Flip the switch on the Turtlebot's OpenCR board to turn off.
+
+## 4.11&emsp;Waypoints
+This is the obstructed environment at E4A level 3 lab for Project 1. You are tasked to navigate the robot from the starting point to the three waypoints in sequence. You should be able to find the points on the floor, where the waypoints are numbered by dashes. The orientation for each waypoint is indicated by an arrow, marked on the floor.
+![tbot_batt](img/waypoints/map.jpg)
+Starting position:
+![tbot_batt](img/waypoints/start.jpg)
+Waypoint 1:
+![tbot_batt](img/waypoints/wp1.jpg)
+Waypoint 2:
+![tbot_batt](img/waypoints/wp2.jpg)
+Waypoint 3:
+![tbot_batt](img/waypoints/wp3.jpg)
+
+## 4.12&emsp;Demonstration Video
+You have to shoot a video of the physical robot navigating in the maze. You also have to record your screen that shows RViz window and the navigation terminal. An example can be seen in the followong link: [Example.](https://youtu.be/m7npzdYp6Ok?si=LxEMjBkNGBeY4dWs)
+
+## 4.13&emsp;Troubleshooting
+1. Time synchronisation problem during running navigation via Chrony: [Link.](https://github.com/nat9dai/Misc/blob/main/time_sync_chrony.md)
