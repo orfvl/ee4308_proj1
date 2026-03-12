@@ -164,6 +164,15 @@ namespace ee4308::drone
         }
 
         // if in range, write to Ysonar_, and do the KF correction.
+        Eigen::Matrix<double, 1, 2> H {
+            1, 0
+        };
+        Eigen::Matrix<double, 1, 1> V = Eigen::Matrix<double, 1, 1>::Constant(1.0);
+
+        Eigen::Vector2d K = Pz_ * H.transpose() * (H * Pz_ * H.transpose() + V* var_sonar_ * V.transpose()).inverse();
+        Xz_ = Xz_ + K * (Ysonar_ - H * Xz_);
+        Pz_ = Pz_ - K * H * Pz_;
+
     }
 
     // ================================ Magnetic sub callback / EKF Correction ========================================
@@ -236,7 +245,16 @@ namespace ee4308::drone
         // =========
 
         // rewrite or delete the following
-        (void) msg;
+        // (void) msg;
+
+        Eigen::Matrix2d Fz_ {
+            {1, dt},
+            {0, 1}
+        };
+        Eigen::Vector2d Wz_(0.5 * dt * dt, dt);
+
+        Xz_ = Fz_ * Xz_ + Wz_ * (msg.linear_acceleration.z - GRAVITY);
+        Pz_ = Fz_ * Pz_ * Fz_.transpose() + Wz_ * var_imu_z_ * Wz_.transpose();
     }
 
     void Estimator::callbackSubTrueOdom_(const nav_msgs::msg::Odometry msg)
