@@ -13,8 +13,8 @@ drone:
     ros__parameters:
       lookahead_distance: 1.0
       max_xy_vel: 1.0
-      max_z_vel: 1.0
-      yaw_vel: 0.0
+      max_z_vel: 0.5
+      yaw_vel: -0.3
       kp_xy: 1.0
       kp_z: 1.0
       frequency: 20.0
