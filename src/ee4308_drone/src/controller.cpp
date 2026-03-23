@@ -75,8 +75,62 @@ namespace ee4308::drone
         // publishCmdVel__()
         // =========
 
+        //  Find the closest point along the path.
+        size_t closest_idx = 0;
+        double closest_dist = std::hypot(plan_.poses[0].pose.position.x - odom_.pose.pose.position.x,
+                                        plan_.poses[0].pose.position.y - odom_.pose.pose.position.y,
+                                        plan_.poses[0].pose.position.z - odom_.pose.pose.position.z);
+        for (size_t i = 1; i < plan_.poses.size(); i++)
+        {
+            double dist = std::hypot(plan_.poses[i].pose.position.x - odom_.pose.pose.position.x,
+                                    plan_.poses[i].pose.position.y - odom_.pose.pose.position.y,
+                                    plan_.poses[i].pose.position.z - odom_.pose.pose.position.z);
+            if (dist < closest_dist)            {
+                closest_dist = dist;
+                closest_idx = i;
+            }
+        }
+        
+        //  Find the lookahead point along the path that is at least lookahead_distance_ away from the closest point.
+        //  From the lookahead point by searching from the closest point.
+        size_t lookahead_idx = plan_.poses.size() - 1;
+        for (size_t i = closest_idx; i < plan_.poses.size(); i++)
+        {
+            double dist = std::hypot(plan_.poses[i].pose.position.x - odom_.pose.pose.position.x,
+                                    plan_.poses[i].pose.position.y - odom_.pose.pose.position.y,
+                                    plan_.poses[i].pose.position.z - odom_.pose.pose.position.z);
+            if (dist >= lookahead_distance_)
+            {
+                lookahead_idx = i;
+                break;
+            }
+        }
+
+        //  Determine the x and y velocities in the drone's frame to reach the lookahead point.
+        double vel_ = kp_xy_ * std::hypot(plan_.poses[lookahead_idx].pose.position.x - odom_.pose.pose.position.x,
+                                    plan_.poses[lookahead_idx].pose.position.y - odom_.pose.pose.position.y);
+        vel_ = std::clamp(vel_, 0.0, max_xy_vel_);
+
+        double path_yaw = std::atan2(plan_.poses[lookahead_idx].pose.position.y - odom_.pose.pose.position.y,
+                                    plan_.poses[lookahead_idx].pose.position.x - odom_.pose.pose.position.x);
+        double drone_yaw = ee4308::getYawFromQuaternion(odom_.pose.pose.orientation);
+        double angle_diff = ee4308::limitAngle(path_yaw - drone_yaw);
+        double x_vel_ = vel_*std::cos(angle_diff);
+        double y_vel_ = vel_*std::sin(angle_diff);
+
+        //  Determine the z velocity in the drone's frame to reach the lookahead point.
+        double z_vel_ = kp_z_ * (plan_.poses[lookahead_idx].pose.position.z - odom_.pose.pose.position.z);
+
+        //  Constrain the x and y velocities.
+        x_vel_ = std::clamp(x_vel_, -max_xy_vel_, max_xy_vel_);
+        y_vel_ = std::clamp(y_vel_, -max_xy_vel_, max_xy_vel_);
+
+        //  Constrain the z velocity.
+        z_vel_ = std::clamp(z_vel_, -max_z_vel_, max_z_vel_);
+
+        //  Move the drone in x , y , and z , and at the required yaw velocity.
         // publish
-        publishCmdVel_(0, 0, 0, 0);
+        publishCmdVel_(x_vel_, y_vel_, z_vel_, yaw_vel_);
     }
 
     // ================================  PUBLISHING ========================================

@@ -83,7 +83,11 @@ namespace ee4308::drone
         // =========
 
         // rewrite or delete the following
-        (void) (sin_lat * cos_lat * sin_lon * cos_lon * alt);
+        double e_sq = 1 - (RAD_POLAR * RAD_POLAR) / (RAD_EQUATOR * RAD_EQUATOR);
+        double N = RAD_EQUATOR / std::sqrt(1 - e_sq * sin_lat * sin_lat);
+        ECEF(0) = (N + alt) * cos_lat * cos_lon;
+        ECEF(1) = (N + alt) * cos_lat * sin_lon;
+        ECEF(2) = (N * (1 - e_sq) + alt) * sin_lat;
 
         return ECEF;
     }
@@ -130,7 +134,43 @@ namespace ee4308::drone
         // =========
 
         // rewrite or delete the following
-        (void) ECEF;
+
+        // ECEF to NED rotation matrix R_e/n
+        Eigen::Matrix3d R_en;
+        R_en << -sin_lat * cos_lon, -sin_lon, -cos_lat * cos_lon,
+                -sin_lat * sin_lon,  cos_lon, -cos_lat * sin_lon,
+                cos_lat,            0,       -sin_lat;
+        // NED = R_en^T * (ECEF - initial_ECEF)
+        Eigen::Vector3d NED = R_en.transpose() * (ECEF - initial_ECEF_);
+
+        // NED to world frame (Gazebo ENU convention)
+        // R_m/n swaps North/East and negates Down
+        Eigen::Matrix3d R_mn;
+        R_mn << 0, 1,  0,
+                1, 0,  0,
+                0, 0, -1;
+
+        Ygps_ = R_mn * NED + initial_position_;
+
+        // --- KF correction for x ---
+        Eigen::Matrix<double, 1, 2> H {1, 0};
+
+        double Sx = (H * Px_ * H.transpose())(0, 0) + var_gps_x_;
+        Eigen::Vector2d Kx = Px_ * H.transpose() / Sx;
+        Xx_ = Xx_ + Kx * (Ygps_(0) - (H * Xx_)(0, 0));
+        Px_ = Px_ - Kx * H * Px_;
+
+        // --- KF correction for y ---
+        double Sy = (H * Py_ * H.transpose())(0, 0) + var_gps_y_;
+        Eigen::Vector2d Ky = Py_ * H.transpose() / Sy;
+        Xy_ = Xy_ + Ky * (Ygps_(1) - (H * Xy_)(0, 0));
+        Py_ = Py_ - Ky * H * Py_;
+
+        // --- KF correction for z ---
+        double Sz = (H * Pz_ * H.transpose())(0, 0) + var_gps_z_;
+        Eigen::Vector2d Kz = Pz_ * H.transpose() / Sz;
+        Xz_ = Xz_ + Kz * (Ygps_(2) - (H * Xz_)(0, 0));
+        Pz_ = Pz_ - Kz * H * Pz_;
     }
 
     // ================================ Sonar sub callback / EKF Correction ========================================
@@ -152,8 +192,8 @@ namespace ee4308::drone
         // ==== [FOR LAB 2 ONLY] ==== 
         // The following is necessary so that the covariance bubble in RViz does not fill up the screen.
         // For proj 2, comment out the following:
-        Px_ << 0.1, 0, 0, 0.1;
-        Py_ << 0.1, 0, 0, 0.1;
+        // Px_ << 0.1, 0, 0, 0.1;
+        // Py_ << 0.1, 0, 0, 0.1;
         // =========
         
         if (!std::isfinite(Ysonar_))
@@ -247,6 +287,10 @@ namespace ee4308::drone
         // rewrite or delete the following
         // (void) msg;
 
+        double ux = msg.linear_acceleration.x;
+        double uy = msg.linear_acceleration.y;
+        double uz = msg.linear_acceleration.z;
+
         Eigen::Matrix2d Fz_ {
             {1, dt},
             {0, 1}
@@ -255,6 +299,33 @@ namespace ee4308::drone
 
         Xz_ = Fz_ * Xz_ + Wz_ * (msg.linear_acceleration.z - GRAVITY);
         Pz_ = Fz_ * Pz_ * Fz_.transpose() + Wz_ * var_imu_z_ * Wz_.transpose();
+
+        Eigen::Matrix2d Fx_ = Fz_;
+        Eigen::Matrix<double,1 ,2> rot_ {
+            {std::cos(Xa_(0)), -std::sin(Xa_(0))}
+        };
+        Eigen::Matrix2d Wx_ = Wz_ * rot_;
+        Eigen::Matrix2d Qx_ {
+            {var_imu_x_, 0},
+            {0, var_imu_y_}
+        };
+        Eigen::Vector2d Ux_(ux, uy);
+        Xx_ = Fx_ * Xx_ + Wx_ * Ux_;
+        Px_ = Fx_ * Px_ * Fx_.transpose() + Wx_ * Qx_ * Wx_.transpose();
+
+        Eigen::Matrix2d Fy_ = Fz_;
+        Eigen::Matrix<double,1 ,2> rot__ {
+            {std::sin(Xa_(0)), std::cos(Xa_(0))}
+        };
+        Eigen::Matrix2d Wy_ = Wz_ * rot__;
+        Xy_ = Fy_ * Xy_ + Wy_ * Ux_;
+        Py_ = Fy_ * Py_ * Fy_.transpose() + Wy_ * Qx_ * Wy_.transpose();
+
+        Eigen::Matrix2d Fa_ = Fz_;
+        Eigen::Vector2d Wa_ = Wz_;
+        Xa_ = Fa_ * Xa_ + Wa_ * uz;
+        Pa_ = Fa_ * Pa_ * Fa_.transpose() + Wa_ * var_imu_a_ * Wa_.transpose();
+
     }
 
     void Estimator::callbackSubTrueOdom_(const nav_msgs::msg::Odometry msg)
