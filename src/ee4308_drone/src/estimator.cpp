@@ -241,7 +241,7 @@ namespace ee4308::drone
             1, 0
         };
 
-        Ymagnet_ = limitAngle(std::atan2(msg.magnetic_field.y, msg.magnetic_field.x));
+        Ymagnet_ = -limitAngle(std::atan2(msg.magnetic_field.y, msg.magnetic_field.x));
 
         Eigen::Matrix<double, 1, 1> V = Eigen::Matrix<double, 1, 1>::Constant(1.0);
         Eigen::Vector2d K = Pa_ * H.transpose() * (H * Pa_ * H.transpose() + V* var_magnet_ * V.transpose()).inverse();
@@ -496,6 +496,15 @@ namespace ee4308::drone
                    << std::setw(7) << "--" << "\t"
                    << std::setw(7) << "--" << "\t"
                    << std::setw(7) << std::setprecision(3) << Ymagnet_
+                   << std::endl;
+                std::cout << ss.str() << std::endl;
+                ss << "\t"
+                   << std::setw(7) << std::setprecision(3) << t << "\t"
+                   << std::setw(7) << "true yaw"<< "\t"
+                   << std::setw(7) << "--" << "\t"
+                   << std::setw(7) << "--" << "\t"
+                   << std::setw(7) << "--" << "\t"
+                   << std::setw(7) << std::setprecision(3) << ee4308::getYawFromQuaternion(true_odom_.pose.pose.orientation)
                    << std::endl;
                 std::cout << ss.str() << std::endl;
             }
