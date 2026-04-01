@@ -25,6 +25,13 @@ namespace ee4308::drone
             "plan", rclcpp::SensorDataQoS(),
             std::bind(&Controller::callbackSubPlan_, this, std::placeholders::_1));
 
+        this->pub_lookahead_marker_ = this->create_publisher<visualization_msgs::msg::Marker>(
+            "lookahead_marker", rclcpp::SensorDataQoS());
+
+        this->sub_true_odom_ = this->create_subscription<nav_msgs::msg::Odometry>(
+            "true_odom", rclcpp::SensorDataQoS(),
+            [this](const nav_msgs::msg::Odometry msg) { this->true_odom_ = msg; });
+
         this->received_odom_ = false;
 
         this->timer_ = this->create_timer(1s / this->frequency_, std::bind(&Controller::callbackTimer_, this));
@@ -77,14 +84,14 @@ namespace ee4308::drone
 
         //  Find the closest point along the path.
         size_t closest_idx = 0;
-        double closest_dist = std::hypot(plan_.poses[0].pose.position.x - odom_.pose.pose.position.x,
-                                        plan_.poses[0].pose.position.y - odom_.pose.pose.position.y,
-                                        plan_.poses[0].pose.position.z - odom_.pose.pose.position.z);
+        double closest_dist = std::hypot(plan_.poses[0].pose.position.x - true_odom_.pose.pose.position.x,
+                                        plan_.poses[0].pose.position.y - true_odom_.pose.pose.position.y,
+                                        plan_.poses[0].pose.position.z - true_odom_.pose.pose.position.z);
         for (size_t i = 1; i < plan_.poses.size(); i++)
         {
-            double dist = std::hypot(plan_.poses[i].pose.position.x - odom_.pose.pose.position.x,
-                                    plan_.poses[i].pose.position.y - odom_.pose.pose.position.y,
-                                    plan_.poses[i].pose.position.z - odom_.pose.pose.position.z);
+            double dist = std::hypot(plan_.poses[i].pose.position.x - true_odom_.pose.pose.position.x,
+                                    plan_.poses[i].pose.position.y - true_odom_.pose.pose.position.y,
+                                    plan_.poses[i].pose.position.z - true_odom_.pose.pose.position.z);
             if (dist < closest_dist)            {
                 closest_dist = dist;
                 closest_idx = i;
@@ -96,9 +103,9 @@ namespace ee4308::drone
         size_t lookahead_idx = plan_.poses.size() - 1;
         for (size_t i = closest_idx; i < plan_.poses.size(); i++)
         {
-            double dist = std::hypot(plan_.poses[i].pose.position.x - odom_.pose.pose.position.x,
-                                    plan_.poses[i].pose.position.y - odom_.pose.pose.position.y,
-                                    plan_.poses[i].pose.position.z - odom_.pose.pose.position.z);
+            double dist = std::hypot(plan_.poses[i].pose.position.x - true_odom_.pose.pose.position.x,
+                                    plan_.poses[i].pose.position.y - true_odom_.pose.pose.position.y,
+                                    plan_.poses[i].pose.position.z - true_odom_.pose.pose.position.z);
             if (dist >= lookahead_distance_)
             {
                 lookahead_idx = i;
@@ -107,29 +114,50 @@ namespace ee4308::drone
         }
 
         //  Determine the x and y velocities in the drone's frame to reach the lookahead point.
-        double vel_ = kp_xy_ * std::hypot(plan_.poses[lookahead_idx].pose.position.x - odom_.pose.pose.position.x,
-                                    plan_.poses[lookahead_idx].pose.position.y - odom_.pose.pose.position.y);
+        double vel_ = kp_xy_ * std::hypot(plan_.poses[lookahead_idx].pose.position.x - true_odom_.pose.pose.position.x,
+                                    plan_.poses[lookahead_idx].pose.position.y - true_odom_.pose.pose.position.y);
         vel_ = std::clamp(vel_, 0.0, max_xy_vel_);
 
-        double path_yaw = std::atan2(plan_.poses[lookahead_idx].pose.position.y - odom_.pose.pose.position.y,
-                                    plan_.poses[lookahead_idx].pose.position.x - odom_.pose.pose.position.x);
-        double drone_yaw = ee4308::getYawFromQuaternion(odom_.pose.pose.orientation);
+        double path_yaw = std::atan2(plan_.poses[lookahead_idx].pose.position.y - true_odom_.pose.pose.position.y,
+                                    plan_.poses[lookahead_idx].pose.position.x - true_odom_.pose.pose.position.x);
+        double drone_yaw = ee4308::getYawFromQuaternion(true_odom_.pose.pose.orientation);
         double angle_diff = ee4308::limitAngle(path_yaw - drone_yaw);
         double x_vel_ = vel_*std::cos(angle_diff);
         double y_vel_ = vel_*std::sin(angle_diff);
 
         //  Determine the z velocity in the drone's frame to reach the lookahead point.
-        double z_vel_ = kp_z_ * (plan_.poses[lookahead_idx].pose.position.z - odom_.pose.pose.position.z);
+        double z_vel_ = kp_z_ * (plan_.poses[lookahead_idx].pose.position.z - true_odom_.pose.pose.position.z);
 
         //  Constrain the x and y velocities.
-        x_vel_ = std::clamp(x_vel_, -max_xy_vel_, max_xy_vel_);
-        y_vel_ = std::clamp(y_vel_, -max_xy_vel_, max_xy_vel_);
+        // x_vel_ = std::clamp(x_vel_, -max_xy_vel_, max_xy_vel_);
+        // y_vel_ = std::clamp(y_vel_, -max_xy_vel_, max_xy_vel_);
 
         //  Constrain the z velocity.
         z_vel_ = std::clamp(z_vel_, -max_z_vel_, max_z_vel_);
 
         //  Move the drone in x , y , and z , and at the required yaw velocity.
         // publish
+
+        // Publish lookahead point marker for Foxglove visualization
+        visualization_msgs::msg::Marker marker;
+        marker.header.frame_id = "map";
+        marker.header.stamp = this->now();
+        marker.ns = "lookahead";
+        marker.id = 0;
+        marker.type = visualization_msgs::msg::Marker::SPHERE;
+        marker.action = visualization_msgs::msg::Marker::ADD;
+        marker.pose.position.x = plan_.poses[lookahead_idx].pose.position.x;
+        marker.pose.position.y = plan_.poses[lookahead_idx].pose.position.y;
+        marker.pose.position.z = plan_.poses[lookahead_idx].pose.position.z;
+        marker.pose.orientation.w = 1.0;
+        marker.scale.x = 0.2;
+        marker.scale.y = 0.2;
+        marker.scale.z = 0.2;
+        marker.color.r = 1.0;
+        marker.color.g = 0.0;
+        marker.color.b = 0.0;
+        marker.color.a = 1.0;
+        pub_lookahead_marker_->publish(marker);
         publishCmdVel_(x_vel_, y_vel_, z_vel_, yaw_vel_);
     }
 

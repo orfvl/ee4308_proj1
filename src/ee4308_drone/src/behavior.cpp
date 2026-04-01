@@ -65,6 +65,13 @@ namespace ee4308::drone
         // odom_
         // waypoint_x_, waypoint_y_, waypoint_z_
         // ==== ====
+        // Update turtle-tracking waypoints every tick
+        if (state_ == TURTLE_POSITION && !turtle_plan_.poses.empty())
+        {
+            setWaypoint_(turtle_plan_.poses[0].pose.position.x,
+                        turtle_plan_.poses[0].pose.position.y,
+                        cruise_height_);
+        }
 
         if (reachedWaypoint_())  // change the 1: if (reached waypoint)
         {
@@ -72,7 +79,10 @@ namespace ee4308::drone
             //    Transition to either initial state or turtle-position state.
             if (state_ == TAKEOFF)
             {
-                transition_(INITIAL);
+                if (turtle_stop_)
+                    transition_(INITIAL);
+                else
+                    transition_(TURTLE_POSITION);
             }
             
             //   Else If state is initial Then
@@ -165,7 +175,7 @@ namespace ee4308::drone
         }
         else if (state_ == TURTLE_WAYPOINT)
         {
-            setWaypoint_(turtle_plan_.poses[-1].pose.position.x, turtle_plan_.poses[-1].pose.position.y, cruise_height_);
+            setWaypoint_(turtle_plan_.poses.back().pose.position.x, turtle_plan_.poses.back().pose.position.y, cruise_height_);
         }
         else if (state_ == INITIAL)
         {

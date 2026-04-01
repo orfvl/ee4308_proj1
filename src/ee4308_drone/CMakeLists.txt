@@ -19,6 +19,7 @@ find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(eigen3_cmake_module REQUIRED)
 find_package(Eigen3)
+find_package(visualization_msgs REQUIRED)
 
 set (DEPENDENCIES
   rclcpp
@@ -31,6 +32,7 @@ set (DEPENDENCIES
   tf2
   tf2_ros
   Eigen3
+  visualization_msgs
 )
 
 ######### BEHAVIOR ########

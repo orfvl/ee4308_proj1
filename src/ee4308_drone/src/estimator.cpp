@@ -237,6 +237,17 @@ namespace ee4308::drone
         // =========
 
         // rewrite or delete the following:
+        Eigen::Matrix<double, 1, 2> H {
+            1, 0
+        };
+
+        Ymagnet_ = limitAngle(std::atan2(msg.magnetic_field.y, msg.magnetic_field.x));
+
+        Eigen::Matrix<double, 1, 1> V = Eigen::Matrix<double, 1, 1>::Constant(1.0);
+        Eigen::Vector2d K = Pa_ * H.transpose() * (H * Pa_ * H.transpose() + V* var_magnet_ * V.transpose()).inverse();
+        Xa_ = Xa_ + K * (Ymagnet_ - H * Xa_);
+        Pa_ = Pa_ - K * H * Pa_;
+
         (void) msg;
     }
 
@@ -257,6 +268,15 @@ namespace ee4308::drone
         // =========
 
         // rewrite or delete the following
+        // Eigen::Matrix<double, 1, 3> H {
+        //     1, 0, 1
+        // };
+
+        // Eigen::Matrix<double, 1, 1> V = Eigen::Matrix<double, 1, 1>::Constant(1.0);
+        // Eigen::Vector3d K = Pz_ * H.transpose() * (H * Pz_ * H.transpose() + V* var_magnet_ * V.transpose()).inverse();
+        // Xz_ = Xz_ + K * (Ybaro_ - H * Xz_);
+        // Pz_ = Pz_ - K * H * Pz_;
+
         (void) msg;
     }
 
@@ -289,7 +309,7 @@ namespace ee4308::drone
 
         double ux = msg.linear_acceleration.x;
         double uy = msg.linear_acceleration.y;
-        double uz = msg.linear_acceleration.z;
+        //double uz = msg.linear_acceleration.z;
 
         Eigen::Matrix2d Fz_ {
             {1, dt},
@@ -321,9 +341,14 @@ namespace ee4308::drone
         Xy_ = Fy_ * Xy_ + Wy_ * Ux_;
         Py_ = Fy_ * Py_ * Fy_.transpose() + Wy_ * Qx_ * Wy_.transpose();
 
-        Eigen::Matrix2d Fa_ = Fz_;
-        Eigen::Vector2d Wa_ = Wz_;
-        Xa_ = Fa_ * Xa_ + Wa_ * uz;
+        Eigen::Matrix2d Fa_;
+        Fa_ << 1, 0,
+            0, 0;
+
+        Eigen::Vector2d Wa_;
+        Wa_ << dt, 1;
+
+        Xa_ = Fa_ * Xa_ + Wa_ * msg.angular_velocity.z;
         Pa_ = Fa_ * Pa_ * Fa_.transpose() + Wa_ * var_imu_a_ * Wa_.transpose();
 
     }
@@ -474,6 +499,7 @@ namespace ee4308::drone
                    << std::endl;
                 std::cout << ss.str() << std::endl;
             }
+        
         }
     }
 }

@@ -9,6 +9,7 @@
 #include "nav_msgs/msg/path.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "ee4308_drone/core.hpp"
+#include <visualization_msgs/msg/marker.hpp>
 
 #pragma once
 
@@ -24,6 +25,10 @@ namespace ee4308::drone
         rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pub_cmd_vel_;
         rclcpp::TimerBase::SharedPtr timer_;
 
+        rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub_lookahead_marker_;
+        
+        rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_true_odom_;
+        nav_msgs::msg::Odometry true_odom_;
         // other states
         nav_msgs::msg::Odometry odom_;
         nav_msgs::msg::Path plan_;
