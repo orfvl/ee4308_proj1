@@ -84,14 +84,14 @@ namespace ee4308::drone
 
         //  Find the closest point along the path.
         size_t closest_idx = 0;
-        double closest_dist = std::hypot(plan_.poses[0].pose.position.x - true_odom_.pose.pose.position.x,
-                                        plan_.poses[0].pose.position.y - true_odom_.pose.pose.position.y,
-                                        plan_.poses[0].pose.position.z - true_odom_.pose.pose.position.z);
+        double closest_dist = std::hypot(plan_.poses[0].pose.position.x - odom_.pose.pose.position.x,
+                                        plan_.poses[0].pose.position.y - odom_.pose.pose.position.y,
+                                        plan_.poses[0].pose.position.z - odom_.pose.pose.position.z);
         for (size_t i = 1; i < plan_.poses.size(); i++)
         {
-            double dist = std::hypot(plan_.poses[i].pose.position.x - true_odom_.pose.pose.position.x,
-                                    plan_.poses[i].pose.position.y - true_odom_.pose.pose.position.y,
-                                    plan_.poses[i].pose.position.z - true_odom_.pose.pose.position.z);
+            double dist = std::hypot(plan_.poses[i].pose.position.x - odom_.pose.pose.position.x,
+                                    plan_.poses[i].pose.position.y - odom_.pose.pose.position.y,
+                                    plan_.poses[i].pose.position.z - odom_.pose.pose.position.z);
             if (dist < closest_dist)            {
                 closest_dist = dist;
                 closest_idx = i;
@@ -103,9 +103,9 @@ namespace ee4308::drone
         size_t lookahead_idx = plan_.poses.size() - 1;
         for (size_t i = closest_idx; i < plan_.poses.size(); i++)
         {
-            double dist = std::hypot(plan_.poses[i].pose.position.x - true_odom_.pose.pose.position.x,
-                                    plan_.poses[i].pose.position.y - true_odom_.pose.pose.position.y,
-                                    plan_.poses[i].pose.position.z - true_odom_.pose.pose.position.z);
+            double dist = std::hypot(plan_.poses[i].pose.position.x - odom_.pose.pose.position.x,
+                                    plan_.poses[i].pose.position.y - odom_.pose.pose.position.y,
+                                    plan_.poses[i].pose.position.z - odom_.pose.pose.position.z);
             if (dist >= lookahead_distance_)
             {
                 lookahead_idx = i;
@@ -114,19 +114,19 @@ namespace ee4308::drone
         }
 
         //  Determine the x and y velocities in the drone's frame to reach the lookahead point.
-        double vel_ = kp_xy_ * std::hypot(plan_.poses[lookahead_idx].pose.position.x - true_odom_.pose.pose.position.x,
-                                    plan_.poses[lookahead_idx].pose.position.y - true_odom_.pose.pose.position.y);
+        double vel_ = kp_xy_ * std::hypot(plan_.poses[lookahead_idx].pose.position.x - odom_.pose.pose.position.x,
+                                    plan_.poses[lookahead_idx].pose.position.y - odom_.pose.pose.position.y);
         vel_ = std::clamp(vel_, 0.0, max_xy_vel_);
 
-        double path_yaw = std::atan2(plan_.poses[lookahead_idx].pose.position.y - true_odom_.pose.pose.position.y,
-                                    plan_.poses[lookahead_idx].pose.position.x - true_odom_.pose.pose.position.x);
-        double drone_yaw = ee4308::getYawFromQuaternion(true_odom_.pose.pose.orientation);
+        double path_yaw = std::atan2(plan_.poses[lookahead_idx].pose.position.y - odom_.pose.pose.position.y,
+                                    plan_.poses[lookahead_idx].pose.position.x - odom_.pose.pose.position.x);
+        double drone_yaw = ee4308::getYawFromQuaternion(odom_.pose.pose.orientation);
         double angle_diff = ee4308::limitAngle(path_yaw - drone_yaw);
         double x_vel_ = vel_*std::cos(angle_diff);
         double y_vel_ = vel_*std::sin(angle_diff);
 
         //  Determine the z velocity in the drone's frame to reach the lookahead point.
-        double z_vel_ = kp_z_ * (plan_.poses[lookahead_idx].pose.position.z - true_odom_.pose.pose.position.z);
+        double z_vel_ = kp_z_ * (plan_.poses[lookahead_idx].pose.position.z - odom_.pose.pose.position.z);
 
         //  Constrain the x and y velocities.
         // x_vel_ = std::clamp(x_vel_, -max_xy_vel_, max_xy_vel_);

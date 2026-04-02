@@ -48,11 +48,11 @@ namespace ee4308::drone
         this->initial_position_ << initial_x, initial_y, initial_z;
         this->Xx_ << initial_x, 0;
         this->Xy_ << initial_y, 0;
-        this->Xz_ << initial_z, 0;
+        this->Xz_ << initial_z, 0, -0.819;
         this->Xa_ << 0, 0;
         this->Px_ = Eigen::Matrix2d::Constant(1e3),
         this->Py_ = Eigen::Matrix2d::Constant(1e3),
-        this->Pz_ = Eigen::Matrix2d::Constant(1e3);
+        this->Pz_ = Eigen::Matrix3d::Constant(1e3);
         this->Pa_ = Eigen::Matrix2d::Constant(1e3);
         this->initial_ECEF_ << NAN, NAN, NAN;
         this->Ygps_ << NAN, NAN, NAN;
@@ -167,10 +167,11 @@ namespace ee4308::drone
         Py_ = Py_ - Ky * H * Py_;
 
         // --- KF correction for z ---
-        double Sz = (H * Pz_ * H.transpose())(0, 0) + var_gps_z_;
-        Eigen::Vector2d Kz = Pz_ * H.transpose() / Sz;
-        Xz_ = Xz_ + Kz * (Ygps_(2) - (H * Xz_)(0, 0));
-        Pz_ = Pz_ - Kz * H * Pz_;
+        Eigen::Matrix<double, 1, 3> Hz_ {1, 0, 0};
+        double Sz = (Hz_ * Pz_ * Hz_.transpose())(0, 0) + var_gps_z_;
+        Eigen::Vector3d Kz = Pz_ * Hz_.transpose() / Sz;
+        Xz_ = Xz_ + Kz * (Ygps_(2) - (Hz_ * Xz_)(0, 0));
+        Pz_ = Pz_ - Kz * Hz_ * Pz_;
     }
 
     // ================================ Sonar sub callback / EKF Correction ========================================
@@ -204,12 +205,12 @@ namespace ee4308::drone
         }
 
         // if in range, write to Ysonar_, and do the KF correction.
-        Eigen::Matrix<double, 1, 2> H {
-            1, 0
+        Eigen::Matrix<double, 1, 3> H {
+            1, 0, 0
         };
         Eigen::Matrix<double, 1, 1> V = Eigen::Matrix<double, 1, 1>::Constant(1.0);
 
-        Eigen::Vector2d K = Pz_ * H.transpose() * (H * Pz_ * H.transpose() + V* var_sonar_ * V.transpose()).inverse();
+        Eigen::Vector3d K = Pz_ * H.transpose() * (H * Pz_ * H.transpose() + V* var_sonar_ * V.transpose()).inverse();
         Xz_ = Xz_ + K * (Ysonar_ - H * Xz_);
         Pz_ = Pz_ - K * H * Pz_;
 
@@ -273,14 +274,17 @@ namespace ee4308::drone
         // =========
 
         // rewrite or delete the following
-        // Eigen::Matrix<double, 1, 3> H {
-        //     1, 0, 1
-        // };
 
-        // Eigen::Matrix<double, 1, 1> V = Eigen::Matrix<double, 1, 1>::Constant(1.0);
-        // Eigen::Vector3d K = Pz_ * H.transpose() * (H * Pz_ * H.transpose() + V* var_magnet_ * V.transpose()).inverse();
-        // Xz_ = Xz_ + K * (Ybaro_ - H * Xz_);
-        // Pz_ = Pz_ - K * H * Pz_;
+        Eigen::Matrix<double, 1, 3> H {
+            1, 0, 1
+        };
+
+        Eigen::Matrix<double, 1, 1> V = Eigen::Matrix<double, 1, 1>::Constant(1.0);
+        Ybaro_ = 44330.0 * (1.0 - std::pow(msg.fluid_pressure / SEA_LEVEL_PA, 0.1903));
+
+        Eigen::Vector3d K = Pz_ * H.transpose() * (H * Pz_ * H.transpose() + V* var_baro_ * V.transpose()).inverse();
+        Xz_ = Xz_ + K * (Ybaro_ - (H * Xz_)(0, 0));
+        Pz_ = Pz_ - K * H * Pz_;
 
         (void) msg;
     }
@@ -316,20 +320,24 @@ namespace ee4308::drone
         double uy = msg.linear_acceleration.y;
         //double uz = msg.linear_acceleration.z;
 
-        Eigen::Matrix2d Fz_ {
-            {1, dt},
-            {0, 1}
+        Eigen::Matrix3d Fz_ {
+            {1, dt, 0},
+            {0, 1, 0},
+            {0, 0, 1}
         };
-        Eigen::Vector2d Wz_(0.5 * dt * dt, dt);
+        Eigen::Vector3d Wz_(0.5 * dt * dt, dt, 0);
 
         Xz_ = Fz_ * Xz_ + Wz_ * (msg.linear_acceleration.z - GRAVITY);
         Pz_ = Fz_ * Pz_ * Fz_.transpose() + Wz_ * var_imu_z_ * Wz_.transpose();
 
-        Eigen::Matrix2d Fx_ = Fz_;
+        Eigen::Matrix2d Fx_ {
+            {1, dt},
+            {0, 1}
+        };
         Eigen::Matrix<double,1 ,2> rot_ {
             {std::cos(Xa_(0)), -std::sin(Xa_(0))}
         };
-        Eigen::Matrix2d Wx_ = Wz_ * rot_;
+        Eigen::Matrix2d Wx_ = Eigen::Vector2d(0.5 * dt * dt, dt) * rot_;
         Eigen::Matrix2d Qx_ {
             {var_imu_x_, 0},
             {0, var_imu_y_}
@@ -338,11 +346,11 @@ namespace ee4308::drone
         Xx_ = Fx_ * Xx_ + Wx_ * Ux_;
         Px_ = Fx_ * Px_ * Fx_.transpose() + Wx_ * Qx_ * Wx_.transpose();
 
-        Eigen::Matrix2d Fy_ = Fz_;
+        Eigen::Matrix2d Fy_ = Fx_;
         Eigen::Matrix<double,1 ,2> rot__ {
             {std::sin(Xa_(0)), std::cos(Xa_(0))}
         };
-        Eigen::Matrix2d Wy_ = Wz_ * rot__;
+        Eigen::Matrix2d Wy_ = Eigen::Vector2d(0.5 * dt * dt, dt) * rot__;
         Xy_ = Fy_ * Xy_ + Wy_ * Ux_;
         Py_ = Fy_ * Py_ * Fy_.transpose() + Wy_ * Qx_ * Wy_.transpose();
 
@@ -479,14 +487,14 @@ namespace ee4308::drone
                    << std::setw(7) << std::setprecision(3) << Ybaro_ << "\t"
                    << std::setw(7) << "--"
                    << std::endl;
-                // ss << "\t"
-                //    << std::setw(7) << std::setprecision(3) << t << "\t"
-                //    << std::setw(7) << "BBias"<< "\t"
-                //    << std::setw(7) << "--" << "\t"
-                //    << std::setw(7) << "--" << "\t"
-                //    << std::setw(7) << std::setprecision(3) << Xz_(2) << "\t"
-                //    << std::setw(7) << "--"
-                //    << std::endl;
+                ss << "\t"
+                   << std::setw(7) << std::setprecision(3) << t << "\t"
+                   << std::setw(7) << "BBias"<< "\t"
+                   << std::setw(7) << "--" << "\t"
+                   << std::setw(7) << "--" << "\t"
+                   << std::setw(7) << std::setprecision(3) << Xz_(2) << "\t"
+                   << std::setw(7) << "--"
+                   << std::endl;
                 ss << "\t"
                    << std::setw(7) << std::setprecision(3) << t << "\t"
                    << std::setw(7) << "Sonar"<< "\t"

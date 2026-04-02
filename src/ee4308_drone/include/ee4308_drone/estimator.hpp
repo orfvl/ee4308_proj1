@@ -39,12 +39,12 @@ namespace ee4308::drone
         nav_msgs::msg::Odometry true_odom_; // ground truth
         Eigen::Vector2d Xx_;
         Eigen::Vector2d Xy_;
-        Eigen::Vector2d Xz_;
+        Eigen::Vector3d Xz_;
         Eigen::Vector2d Xa_;
         Eigen::Matrix2d Px_;
         Eigen::Matrix2d Py_;
         Eigen::Matrix2d Pa_;
-        Eigen::Matrix2d Pz_;
+        Eigen::Matrix3d Pz_;
         Eigen::Vector3d initial_ECEF_;
         Eigen::Vector3d initial_position_;
         Eigen::Vector3d Ygps_;
