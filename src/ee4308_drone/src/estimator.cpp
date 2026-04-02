@@ -245,8 +245,13 @@ namespace ee4308::drone
 
         Eigen::Matrix<double, 1, 1> V = Eigen::Matrix<double, 1, 1>::Constant(1.0);
         Eigen::Vector2d K = Pa_ * H.transpose() * (H * Pa_ * H.transpose() + V* var_magnet_ * V.transpose()).inverse();
-        Xa_ = Xa_ + K * (Ymagnet_ - H * Xa_);
+        double innovation = limitAngle(Ymagnet_ - (H * Xa_)(0, 0));
+        Xa_ = Xa_ + K * innovation;
+        Xa_(0) = limitAngle(Xa_(0));  // keep the state wrapped too;
         Pa_ = Pa_ - K * H * Pa_;
+        RCLCPP_INFO(this->get_logger(), 
+            "MAG: Ymagnet=%.3f  Xa0=%.3f  innov=%.3f  K0=%.4f  K1=%.4f  Pa00=%.4f",
+            Ymagnet_, Xa_(0), innovation, K(0), K(1), Pa_(0,0));
 
         (void) msg;
     }
@@ -349,6 +354,7 @@ namespace ee4308::drone
         Wa_ << dt, 1;
 
         Xa_ = Fa_ * Xa_ + Wa_ * msg.angular_velocity.z;
+        Xa_(0) = limitAngle(Xa_(0));
         Pa_ = Fa_ * Pa_ * Fa_.transpose() + Wa_ * var_imu_a_ * Wa_.transpose();
 
     }
