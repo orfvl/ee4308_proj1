@@ -43,6 +43,8 @@ namespace ee4308::drone
         double yaw_vel_;
         double kp_xy_;
         double kp_z_;
+        double kd_xy_;
+        double kd_z_;
 
     public:
         explicit Controller(

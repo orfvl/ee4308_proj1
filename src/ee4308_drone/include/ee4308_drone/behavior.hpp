@@ -63,6 +63,16 @@ namespace ee4308::drone
         double waypoint_y_;
         double waypoint_z_;
 
+                // Intercept prediction for turtle tracking
+        double turtle_speed_;                // estimated turtle speed (m/s)
+        double prev_turtle_x_;
+        double prev_turtle_y_;
+        rclcpp::Time prev_turtle_time_;
+        bool turtle_speed_initialized_;
+        double drone_cruise_speed_;          // estimated average drone horizontal speed (m/s)
+
+        
+
     public:
         explicit Behavior(
             const rclcpp::NodeOptions &options,
@@ -82,6 +92,10 @@ namespace ee4308::drone
         void setWaypoint_(double waypoint_x, double waypoint_y, double waypoint_z);
 
         bool reachedWaypoint_();
+
+        void updateTurtleSpeed_();
+ 
+        void computeInterceptPoint_(double &intercept_x, double &intercept_y);
 
         void requestPlan_(double drone_x, double drone_y, double drone_z,
                           double waypoint_x, double waypoint_y, double waypoint_z);

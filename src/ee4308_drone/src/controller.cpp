@@ -15,6 +15,7 @@ namespace ee4308::drone
         this->yaw_vel_ = ee4308::getParameter<double>(this, "yaw_vel", 0.3).as_double();
         this->kp_xy_ = ee4308::getParameter<double>(this, "kp_xy", 1.0).as_double();
         this->kp_z_ = ee4308::getParameter<double>(this, "kp_z", 1.0).as_double();
+        
 
         this->pub_cmd_vel_ = this->create_publisher<geometry_msgs::msg::Twist>(
             "cmd_vel", rclcpp::ServicesQoS());
@@ -113,26 +114,37 @@ namespace ee4308::drone
             }
         }
 
-        //  Determine the x and y velocities in the drone's frame to reach the lookahead point.
-        double vel_ = kp_xy_ * std::hypot(plan_.poses[lookahead_idx].pose.position.x - odom_.pose.pose.position.x,
-                                    plan_.poses[lookahead_idx].pose.position.y - odom_.pose.pose.position.y);
+                //  Determine the x and y velocities in the drone's frame to reach the lookahead point.
+        //  PD control: proportional term drives toward target, derivative term damps current velocity.
+        double xy_error = std::hypot(plan_.poses[lookahead_idx].pose.position.x - odom_.pose.pose.position.x,
+                                     plan_.poses[lookahead_idx].pose.position.y - odom_.pose.pose.position.y);
+        double vel_ = kp_xy_ * xy_error;
         vel_ = std::clamp(vel_, 0.0, max_xy_vel_);
-
+ 
         double path_yaw = std::atan2(plan_.poses[lookahead_idx].pose.position.y - odom_.pose.pose.position.y,
                                     plan_.poses[lookahead_idx].pose.position.x - odom_.pose.pose.position.x);
         double drone_yaw = ee4308::getYawFromQuaternion(odom_.pose.pose.orientation);
         double angle_diff = ee4308::limitAngle(path_yaw - drone_yaw);
-        double x_vel_ = vel_*std::cos(angle_diff);
-        double y_vel_ = vel_*std::sin(angle_diff);
-
-        //  Determine the z velocity in the drone's frame to reach the lookahead point.
-        double z_vel_ = kp_z_ * (plan_.poses[lookahead_idx].pose.position.z - odom_.pose.pose.position.z);
-
-        //  Constrain the x and y velocities.
-        // x_vel_ = std::clamp(x_vel_, -max_xy_vel_, max_xy_vel_);
-        // y_vel_ = std::clamp(y_vel_, -max_xy_vel_, max_xy_vel_);
-
-        //  Constrain the z velocity.
+ 
+        // Proportional component in drone frame
+        double x_vel_ = vel_ * std::cos(angle_diff);
+        double y_vel_ = vel_ * std::sin(angle_diff);
+ 
+        // Derivative damping: subtract a term proportional to the drone's current velocity (in drone frame).
+        // odom twist is in the drone's body frame, so linear.x and linear.y can be used directly.
+        x_vel_ -= kd_xy_ * odom_.twist.twist.linear.x;
+        y_vel_ -= kd_xy_ * odom_.twist.twist.linear.y;
+ 
+        //  Constrain the x and y velocities.
+        x_vel_ = std::clamp(x_vel_, -max_xy_vel_, max_xy_vel_);
+        y_vel_ = std::clamp(y_vel_, -max_xy_vel_, max_xy_vel_);
+ 
+        //  Determine the z velocity in the drone's frame to reach the lookahead point.
+        //  PD control: proportional on altitude error, derivative damps vertical velocity.
+        double z_error = plan_.poses[lookahead_idx].pose.position.z - odom_.pose.pose.position.z;
+        double z_vel_ = kp_z_ * z_error - kd_z_ * odom_.twist.twist.linear.z;
+ 
+        //  Constrain the z velocity.
         z_vel_ = std::clamp(z_vel_, -max_z_vel_, max_z_vel_);
 
         //  Move the drone in x , y , and z , and at the required yaw velocity.
