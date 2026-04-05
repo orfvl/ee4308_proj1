@@ -46,7 +46,8 @@ namespace ee4308::drone
         this->prev_turtle_y_ = 0.0;
         this->prev_turtle_time_ = this->now();
         this->turtle_speed_initialized_ = false;
-        this->drone_cruise_speed_ = 0.4;  // conservative estimate of avg drone horizontal speed
+        this->drone_cruise_speed_ = 0.75;  // conservative estimate of avg drone horizontal speed
+
     }
 
     void Behavior::callbackSubOdom_(nav_msgs::msg::Odometry::SharedPtr msg)
@@ -124,6 +125,7 @@ namespace ee4308::drone
 
             else if (state_ == TURTLE_POSITION)
             {
+                intercept_initialized_ = false;
                 transition_(TURTLE_WAYPOINT);
             }
             
@@ -303,7 +305,7 @@ namespace ee4308::drone
             double seg_dx = turtle_plan_.poses[i + 1].pose.position.x - turtle_plan_.poses[i].pose.position.x;
             double seg_dy = turtle_plan_.poses[i + 1].pose.position.y - turtle_plan_.poses[i].pose.position.y;
             double seg_len = std::hypot(seg_dx, seg_dy);
-            arrival_time_turtle += arrival_time_drone + seg_len / turtle_speed_;
+            arrival_time_turtle += seg_len / turtle_speed_;
 
    
             if (arrival_time_turtle >= arrival_time_drone)
@@ -313,9 +315,22 @@ namespace ee4308::drone
                 break;
             }
         }
- 
-        intercept_x = target_x;
-        intercept_y = target_y;
+        // Smooth the intercept point to prevent jumping
+        if (!intercept_initialized_)
+        {
+            smooth_intercept_x_ = target_x;
+            smooth_intercept_y_ = target_y;
+            intercept_initialized_ = true;
+        }
+        else
+        {
+            double alpha = 0.1;  // lower = smoother but slower to react
+            smooth_intercept_x_ = alpha * target_x + (1.0 - alpha) * smooth_intercept_x_;
+            smooth_intercept_y_ = alpha * target_y + (1.0 - alpha) * smooth_intercept_y_;
+        }
+
+        intercept_x = smooth_intercept_x_;
+        intercept_y = smooth_intercept_y_;
     }
 
  

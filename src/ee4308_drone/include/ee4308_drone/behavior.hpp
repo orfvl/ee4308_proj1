@@ -71,6 +71,10 @@ namespace ee4308::drone
         bool turtle_speed_initialized_;
         double drone_cruise_speed_;          // estimated average drone horizontal speed (m/s)
 
+        double smooth_intercept_x_ = 0.0;
+        double smooth_intercept_y_ = 0.0;
+        bool intercept_initialized_ = false;
+
         
 
     public:
