@@ -15,7 +15,8 @@ namespace ee4308::drone
         this->yaw_vel_ = ee4308::getParameter<double>(this, "yaw_vel", 0.3).as_double();
         this->kp_xy_ = ee4308::getParameter<double>(this, "kp_xy", 1.0).as_double();
         this->kp_z_ = ee4308::getParameter<double>(this, "kp_z", 1.0).as_double();
-        
+        this->kd_xy_ = ee4308::getParameter<double>(this, "kd_xy", 0.5).as_double();
+        this->kd_z_ = ee4308::getParameter<double>(this, "kd_z", 0.5).as_double();
 
         this->pub_cmd_vel_ = this->create_publisher<geometry_msgs::msg::Twist>(
             "cmd_vel", rclcpp::ServicesQoS());
