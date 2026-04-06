@@ -199,6 +199,9 @@ namespace ee4308::drone
                 double intercept_x, intercept_y;
                 computeInterceptPoint_(intercept_x, intercept_y);
                 setWaypoint_(intercept_x, intercept_y, cruise_height_);
+                // setWaypoint_(turtle_plan_.poses[0].pose.position.x,
+                //             turtle_plan_.poses[0].pose.position.y,
+                //             cruise_height_);
             }
         }
         else if (state_ == TURTLE_WAYPOINT)
