@@ -74,6 +74,7 @@ namespace ee4308::drone
         double smooth_intercept_x_ = 0.0;
         double smooth_intercept_y_ = 0.0;
         bool intercept_initialized_ = false;
+        double intercept_bias_;                 // bias added to intercept point to account for turtle stopping and other uncertainties. Positive means lead the turtle, negative means lag behind.
 
         
 

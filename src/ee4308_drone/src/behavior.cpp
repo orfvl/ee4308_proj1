@@ -276,7 +276,7 @@ namespace ee4308::drone
     }
 
 
-    void Behavior::computeInterceptPoint_(double &intercept_x, double &intercept_y)
+    /*void Behavior::computeInterceptPoint_(double &intercept_x, double &intercept_y)
     {
         // Predict where the turtle will be when the drone arrives,
         // by walking along the turtle's planned path.
@@ -334,7 +334,116 @@ namespace ee4308::drone
 
         intercept_x = smooth_intercept_x_;
         intercept_y = smooth_intercept_y_;
+    }*/
+
+    void Behavior::computeInterceptPoint_(double &intercept_x, double &intercept_y)
+{
+    // Predict where the turtle will be when the drone arrives,
+    // by walking along the turtle's planned path.
+    double turtle_x = turtle_plan_.poses[0].pose.position.x;
+    double turtle_y = turtle_plan_.poses[0].pose.position.y;
+
+    if (turtle_speed_ < 0.01)
+    {
+        intercept_x = turtle_x;
+        intercept_y = turtle_y;
+        return;
     }
+
+    // bias formula -----------------------------------------------
+    const double eps_bias = 1e-3;
+
+    // k_bias has unit of time
+    const double k_bias = 0.12;   // smaller is less aggressive
+    const double d0 = 0.8;        // ramp dist in meter
+
+    const double v_drone = std::max(drone_cruise_speed_, 0.05);
+
+    // need turtle and drone distance for gate calc
+    const double dx_dt = turtle_x - odom_.pose.pose.position.x;
+    const double dy_dt = turtle_y - odom_.pose.pose.position.y;
+    const double dist_to_turtle = std::hypot(dx_dt, dy_dt);
+
+    // Ramp goes from 0 near the threshold to 1 when far away
+    const double ramp = std::clamp((dist_to_turtle - reached_thres_) / d0, 0.0, 1.0);
+
+    // time bias
+    const double time_bias = k_bias * (turtle_speed_ / (v_drone - turtle_speed_ + eps_bias)) * ramp;
+
+    // ------------------------------------------------------------
+
+    // Default to the end of the path
+    double target_x = turtle_plan_.poses.back().pose.position.x;
+    double target_y = turtle_plan_.poses.back().pose.position.y;
+
+    // Gap at waypoint 0
+    double arrival_time_turtle_prev = 0.0;
+    double drone_dist_prev = std::hypot(
+        turtle_plan_.poses[0].pose.position.x - odom_.pose.pose.position.x,
+        turtle_plan_.poses[0].pose.position.y - odom_.pose.pose.position.y);
+    double arrival_time_drone_prev = drone_dist_prev / v_drone;
+    double gap_prev = arrival_time_turtle_prev - (arrival_time_drone_prev + time_bias);
+
+    for (size_t i = 1; i < turtle_plan_.poses.size(); i++)
+    {
+        const double x_prev = turtle_plan_.poses[i - 1].pose.position.x;
+        const double y_prev = turtle_plan_.poses[i - 1].pose.position.y;
+        const double x_curr = turtle_plan_.poses[i].pose.position.x;
+        const double y_curr = turtle_plan_.poses[i].pose.position.y;
+
+        double seg_dx = x_curr - x_prev;
+        double seg_dy = y_curr - y_prev;
+        double seg_len = std::hypot(seg_dx, seg_dy);
+
+        double arrival_time_turtle_curr = arrival_time_turtle_prev + seg_len / turtle_speed_;
+
+        double drone_dist_curr = std::hypot(
+            x_curr - odom_.pose.pose.position.x,
+            y_curr - odom_.pose.pose.position.y);
+        double arrival_time_drone_curr = drone_dist_curr / v_drone;
+
+        double gap_curr = arrival_time_turtle_curr - (arrival_time_drone_curr + time_bias);
+
+        // First segment where the timing condition becomes true
+        if (gap_curr >= 0.0)
+        {
+            if (gap_prev < 0.0 && std::abs(gap_curr - gap_prev) > 1e-6)
+            {
+                double lambda = -gap_prev / (gap_curr - gap_prev);
+                lambda = std::clamp(lambda, 0.0, 1.0);
+
+                target_x = x_prev + lambda * seg_dx;
+                target_y = y_prev + lambda * seg_dy;
+            }
+            else
+            {
+                target_x = x_curr;
+                target_y = y_curr;
+            }
+            break;
+        }
+
+        arrival_time_turtle_prev = arrival_time_turtle_curr;
+        gap_prev = gap_curr;
+    }
+
+    // Smooth the intercept point to prevent jumping
+    if (!intercept_initialized_)
+    {
+        smooth_intercept_x_ = target_x;
+        smooth_intercept_y_ = target_y;
+        intercept_initialized_ = true;
+    }
+    else
+    {
+        double alpha = 0.1; // lower = smoother but slower to react
+        smooth_intercept_x_ = alpha * target_x + (1.0 - alpha) * smooth_intercept_x_;
+        smooth_intercept_y_ = alpha * target_y + (1.0 - alpha) * smooth_intercept_y_;
+    }
+
+    intercept_x = smooth_intercept_x_;
+    intercept_y = smooth_intercept_y_;
+}
 
  
     // void Behavior::computeInterceptPoint_(double &intercept_x, double &intercept_y)

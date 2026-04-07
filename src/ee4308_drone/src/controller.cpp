@@ -137,8 +137,12 @@ namespace ee4308::drone
         y_vel_ -= kd_xy_ * odom_.twist.twist.linear.y;
  
         //  Constrain the x and y velocities.
-        x_vel_ = std::clamp(x_vel_, -max_xy_vel_, max_xy_vel_);
-        y_vel_ = std::clamp(y_vel_, -max_xy_vel_, max_xy_vel_);
+        double xy_vel = std::hypot(x_vel_, y_vel_);
+        if (xy_vel > max_xy_vel_)
+        {
+            x_vel_ = x_vel_ / xy_vel * max_xy_vel_;
+            y_vel_ = y_vel_ / xy_vel * max_xy_vel_;
+        }
  
         //  Determine the z velocity in the drone's frame to reach the lookahead point.
         //  PD control: proportional on altitude error, derivative damps vertical velocity.
